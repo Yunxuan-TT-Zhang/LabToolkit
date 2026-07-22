@@ -1,4 +1,4 @@
-/* BenchKit — bench calculator suite. All computation is client-side. */
+/* LabToolkit — bench calculator suite. All computation is client-side. */
 
 /* ============================================================
    Small helpers
@@ -2016,7 +2016,7 @@ TOOLS.import = {
   group: 'Recipes',
   name: 'Buffer from image / text',
   title: 'Buffer from image or text',
-  blurb: 'Paste a buffer description — or photograph one — and BenchKit turns it into a weigh-out protocol. Recognised reagents are matched to a molecular-weight table; edit anything it gets wrong. Images are read on your device and never uploaded.',
+  blurb: 'Paste a buffer description — or photograph one — and LabToolkit turns it into a weigh-out protocol. Recognised reagents are matched to a molecular-weight table; edit anything it gets wrong. Images are read on your device and never uploaded.',
   render() {
     return `
       ${panel('Source', `
@@ -2276,7 +2276,7 @@ TOOLS.library = {
     $('#exportLib', root).addEventListener('click', () => {
       const blob = new Blob([JSON.stringify(getLibrary(), null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = 'benchkit-library.json'; a.click();
+      a.href = URL.createObjectURL(blob); a.download = 'labtoolkit-library.json'; a.click();
       URL.revokeObjectURL(a.href);
     });
     $('#importLib', root).addEventListener('click', () => $('#importFile', root).click());
@@ -2290,7 +2290,7 @@ TOOLS.library = {
           const items = getLibrary();
           for (const it of data) if (it && it.kind) { it.id = uid(); if (!it.createdAt) it.createdAt = Date.now(); items.push(it); }
           setLibrary(items); renderList(); renderDetail();
-        } catch { alert('That file is not a BenchKit library export.'); }
+        } catch { alert('That file is not a LabToolkit library export.'); }
       };
       r.readAsText(f); e.target.value = '';
     });
@@ -2304,7 +2304,7 @@ TOOLS.library = {
    Persistence
    ============================================================ */
 
-const STORE_KEY = 'benchkit.v1';
+const STORE_KEY = 'labtoolkit.v1';
 let store = {};
 
 function readStore() {
@@ -2370,7 +2370,7 @@ function go(id) {
   root.scrollTop = 0;
 
   if (location.hash.slice(1) !== id) history.replaceState(null, '', `#${id}`);
-  store['benchkit.last'] = id;
+  store['labtoolkit.last'] = id;
   writeStore();
 }
 
@@ -2409,7 +2409,7 @@ function markSolved(tool, key) {
 
 function copyResult() {
   const root = $('#content');
-  const lines = [`BenchKit — ${TOOLS[current].title}`, ''];
+  const lines = [`LabToolkit — ${TOOLS[current].title}`, ''];
 
   $$('.result', root).forEach(r => {
     lines.push($('.result-main', r).textContent.trim());
@@ -2441,7 +2441,7 @@ function copyResult() {
 
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
-  store['benchkit.theme'] = t;
+  store['labtoolkit.theme'] = t;
   writeStore();
 }
 
@@ -2453,7 +2453,7 @@ const closeSidebar = () => {
 /* ---------- boot ---------- */
 
 readStore();
-applyTheme(store['benchkit.theme'] ||
+applyTheme(store['labtoolkit.theme'] ||
   (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 
 buildNav();
@@ -2502,7 +2502,7 @@ if (installBtn) {
       deferredPrompt = null;
       installBtn.hidden = true;
     } else {
-      alert('Install BenchKit on your device:\n\n'
+      alert('Install LabToolkit on your device:\n\n'
         + '• iPhone / iPad (Safari): Share → Add to Home Screen\n'
         + '• Android (Chrome): ⋮ menu → Install app\n'
         + '• Desktop (Chrome / Edge): the install icon at the right of the address bar\n\n'
@@ -2511,4 +2511,4 @@ if (installBtn) {
   });
 }
 
-go(location.hash.slice(1) || store['benchkit.last'] || 'molarity');
+go(location.hash.slice(1) || store['labtoolkit.last'] || 'molarity');

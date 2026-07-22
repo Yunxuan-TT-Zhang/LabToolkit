@@ -1,4 +1,4 @@
-# BenchKit
+# LabToolkit
 
 A suite of wet-lab bench calculators. Static files, no backend, no build step.
 All computation happens in the browser; nothing is uploaded anywhere — including
@@ -14,13 +14,13 @@ For local development with a server:
 npm start          # serves on http://localhost:8731
 ```
 
-A server is **required** for two things: installing BenchKit as an app (the service
+A server is **required** for two things: installing LabToolkit as an app (the service
 worker needs http/https, see below) and reliable image OCR (the OCR engine is fetched
 cross-origin, which a bare `file://` page can block).
 
 ## Installing as a mobile / desktop app (PWA)
 
-BenchKit is a Progressive Web App: `manifest.webmanifest` + `sw.js` + `icons/`.
+LabToolkit is a Progressive Web App: `manifest.webmanifest` + `sw.js` + `icons/`.
 Once the site is served over **https**, it can be installed to a home screen and runs
 offline. There is no App Store build — this is the honest path for a static app.
 
@@ -68,7 +68,7 @@ All suites must pass before shipping. The pI values agree with ProtParam to with
 
 ### Buffer from image / text
 
-Paste (or photograph) a buffer description and BenchKit parses each line into a
+Paste (or photograph) a buffer description and LabToolkit parses each line into a
 structured component — concentration, unit, pH, and a reagent matched to a
 ~75-entry molecular-weight table — then computes a weigh-out/pipette protocol for a
 chosen batch volume. Every field is editable, so a wrong match or a missing MW is a

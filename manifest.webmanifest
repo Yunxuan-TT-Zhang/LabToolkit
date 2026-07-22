@@ -1,6 +1,6 @@
 {
-  "name": "BenchKit — lab calculators",
-  "short_name": "BenchKit",
+  "name": "LabToolkit — lab calculators",
+  "short_name": "LabToolkit",
   "description": "A fast, clean suite of wet-lab bench calculators: molarity, dilutions, A280, buffers, primer Tm, plate layouts and more.",
   "start_url": "./index.html",
   "scope": "./",

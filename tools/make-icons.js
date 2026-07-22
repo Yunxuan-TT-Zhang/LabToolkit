@@ -1,4 +1,4 @@
-/* Generates BenchKit's PNG app icons with no image dependencies — just a hand-rolled
+/* Generates LabToolkit's PNG app icons with no image dependencies — just a hand-rolled
    truecolor PNG encoder and a supersampled polygon rasteriser. Run: node tools/make-icons.js
    Draws a lab flask (glass + liquid) on the brand green, which the OS masks/rounds itself. */
 

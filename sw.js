@@ -1,7 +1,7 @@
-/* BenchKit service worker — precache the app shell so it works offline and installs
+/* LabToolkit service worker — precache the app shell so it works offline and installs
    as a standalone app. Bump CACHE whenever the shipped files change. */
 
-const CACHE = 'benchkit-v2';
+const CACHE = 'labtoolkit-v2';
 
 const ASSETS = [
   './',
