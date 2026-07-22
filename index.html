@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BenchKit — lab calculators that don't waste your time</title>
+<meta name="description" content="A fast, clean suite of bench calculators: molarity, dilutions, A280, buffers, plate layouts, primer Tm.">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+
+<!-- Installable web app (PWA). The service worker only registers when the page is
+     served over http(s); opening index.html directly as a file still works, just without
+     offline install. -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1f7a52" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10130f" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BenchKit">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">BK</div>
+      <div>
+        <div class="brand-name">BenchKit</div>
+        <div class="brand-sub">bench calculators</div>
+      </div>
+    </div>
+
+    <nav id="nav"></nav>
+
+    <div class="sidebar-foot">
+      <button class="ghost-btn" id="installBtn" type="button" hidden>Install app</button>
+      <button class="ghost-btn" id="themeToggle" type="button">Toggle theme</button>
+      <div class="muted tiny">Everything runs in your browser. Nothing is uploaded.</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="ghost-btn only-mobile" id="menuBtn" type="button">Menu</button>
+      <div class="topbar-title" id="topbarTitle">Molarity</div>
+      <div class="topbar-actions">
+        <button class="ghost-btn" id="copyBtn" type="button">Copy result</button>
+      </div>
+    </header>
+
+    <div class="content" id="content"></div>
+
+    <footer class="foot">
+      <span class="muted tiny">
+        BenchKit performs standard textbook calculations. Always sanity-check values
+        against your own records before use at the bench.
+      </span>
+    </footer>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

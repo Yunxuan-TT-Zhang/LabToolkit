@@ -1,0 +1,17 @@
+{
+  "name": "benchkit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A fast, clean suite of wet-lab bench calculators. Entirely client-side.",
+  "scripts": {
+    "test": "node mathtest.js && node parsetest.js && node uitest.js",
+    "test:math": "node mathtest.js",
+    "test:parse": "node parsetest.js",
+    "test:ui": "node uitest.js",
+    "icons": "node tools/make-icons.js",
+    "start": "python3 -m http.server 8731"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
