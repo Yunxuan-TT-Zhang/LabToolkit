@@ -221,10 +221,12 @@ $('#footClose').click();
 eq('footer hides when dismissed', $('#foot').hidden, true);
 eq('footer dismissal persisted', JSON.parse(window.localStorage.getItem('labtoolkit.v1'))['foot.dismissed'], true);
 
-console.log('\n=== copy + theme ===');
+console.log('\n=== top-bar auth button + theme ===');
 nav('molarity');
-$('#copyBtn').click();
-eq('copy did not throw', true, true);
+eq('auth button shows sign in when signed out', $('#authBtn').textContent, 'Sign in / Register');
+$('#authBtn').click();
+eq('auth button routes to account when signed out', $('#topbarTitle').textContent, 'Account & sync');
+nav('molarity');
 const before=doc.documentElement.dataset.theme;
 $('#themeToggle').click();
 eq('theme toggles', doc.documentElement.dataset.theme!==before, true);

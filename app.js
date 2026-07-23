@@ -2426,6 +2426,7 @@ async function onSession(sess) {
   const newId = authSession && authSession.user && authSession.user.id;
   if (!authSession) { acctEnvelope = null; dataKey = null; }
   else if (prevId !== newId || acctEnvelope === null) { await loadEnvelope(); }
+  updateAuthButton();
   if (current === 'account') renderAccount($('#content'));
 }
 
@@ -2926,36 +2927,23 @@ function markSolved(tool, key) {
   writeStore();
 }
 
-/* ---------- copy ---------- */
+/* ---------- top-bar auth button ---------- */
 
-function copyResult() {
-  const root = $('#content');
-  const lines = [`LabToolkit — ${TOOLS[current].title}`, ''];
+// Reflects auth state: "Sign in / Register" when signed out, "Sign out" when signed in.
+function updateAuthButton() {
+  const b = $('#authBtn');
+  if (!b) return;
+  b.textContent = (SYNC_ENABLED && authSession) ? 'Sign out' : 'Sign in / Register';
+}
 
-  $$('.result', root).forEach(r => {
-    lines.push($('.result-main', r).textContent.trim());
-    const sub = $('.result-sub', r);
-    if (sub) lines.push(sub.textContent.trim());
-    lines.push('');
-  });
-
-  $$('.readout .cell', root).forEach(c => {
-    lines.push(`${$('.k', c).textContent.trim()}: ${$('.v', c).textContent.trim()}`);
-  });
-
-  $$('table', root).forEach(t => {
-    lines.push('');
-    $$('tr', t).forEach(tr => {
-      lines.push($$('th,td', tr).map(td => td.textContent.trim()).filter(Boolean).join('\t'));
-    });
-  });
-
-  const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-  const btn = $('#copyBtn');
-  navigator.clipboard.writeText(text).then(
-    () => { btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy result', 1400); },
-    () => { btn.textContent = 'Copy failed'; setTimeout(() => btn.textContent = 'Copy result', 1400); }
-  );
+async function onAuthButtonClick() {
+  if (SYNC_ENABLED && authSession) {
+    await signOutAccount();
+    updateAuthButton();
+    if (current === 'account') renderAccount($('#content'));
+  } else {
+    go('account');
+  }
 }
 
 /* ---------- theme & mobile nav ---------- */
@@ -2982,7 +2970,8 @@ buildNav();
 $('#themeToggle').addEventListener('click', () =>
   applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
 
-$('#copyBtn').addEventListener('click', copyResult);
+$('#authBtn').addEventListener('click', onAuthButtonClick);
+updateAuthButton();
 
 // One delegated listener for the whole content area, attached once.
 $('#content').addEventListener('input', onChange);
