@@ -1,16 +1,17 @@
 /* LabToolkit — styles */
 
 :root {
-  --bg: #f7f8f7;
+  --bg: #f5f7f9;
   --panel: #ffffff;
-  --panel-2: #f2f4f2;
-  --ink: #161c18;
-  --ink-2: #4d5a52;
-  --muted: #7c8a82;
-  --line: #dfe4e0;
-  --accent: #1f7a52;
-  --accent-soft: #e6f2eb;
-  --accent-ink: #14563a;
+  --panel-2: #eaeff2;
+  --ink: #17212a;
+  --ink-2: #46535e;
+  --muted: #7a8894;
+  --line: #dbe2e7;
+  --accent: #5d7389;
+  --accent-soft: #a8d8e3;
+  --accent-ink: #2c4150;
+  --accent-contrast: #ffffff;
   --warn: #9a5b12;
   --warn-soft: #fdf3e3;
   --radius: 10px;
@@ -19,16 +20,17 @@
 }
 
 [data-theme="dark"] {
-  --bg: #10130f;
-  --panel: #181c19;
-  --panel-2: #1f241f;
-  --ink: #e8ede9;
-  --ink-2: #b3c0b8;
-  --muted: #7f8d84;
-  --line: #2b322c;
-  --accent: #4fbc86;
-  --accent-soft: #16281f;
-  --accent-ink: #8fd9b3;
+  --bg: #0f151a;
+  --panel: #171f26;
+  --panel-2: #202a32;
+  --ink: #e6edf2;
+  --ink-2: #aebcc7;
+  --muted: #7d8b97;
+  --line: #2a343d;
+  --accent: #a8d8e3;
+  --accent-soft: #1b2a33;
+  --accent-ink: #a8d8e3;
+  --accent-contrast: #12232b;
   --warn: #e0a55c;
   --warn-soft: #2a2113;
 }
@@ -71,7 +73,7 @@ html, body {
   width: 32px; height: 32px;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   display: grid; place-items: center;
   font-weight: 700; font-size: 13px; letter-spacing: .5px;
 }
@@ -251,7 +253,7 @@ button { font-family: inherit; }
   border: 0;
   border-radius: 7px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   font-size: 14px;
   font-weight: 550;
   cursor: pointer;

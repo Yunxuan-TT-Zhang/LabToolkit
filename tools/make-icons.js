@@ -13,7 +13,7 @@ const zlib = require('zlib');
 const OUT = path.join(__dirname, '..', 'icons');
 fs.mkdirSync(OUT, { recursive: true });
 
-const BG   = [31, 122, 82];     // #1f7a52 brand green
+const BG   = [93, 115, 137];    // #5d7389 brand dark blue
 const MARK = [247, 248, 247];   // near-white logo
 
 const STROKE = 30;              // matches the SVG stroke-width
