@@ -577,6 +577,37 @@ async function ocrImage(file, onProgress) {
 }
 
 /* ============================================================
+   Sync reconciliation (pure — no DOM, no network)
+   ============================================================ */
+
+/* Last-write-wins merge of local library items with decrypted remote rows.
+   `remote` entries are { id, kind, updatedAt, deleted, item }. Returns the merged local
+   list plus the items that need pushing back up (local-only or locally-newer). Tombstones
+   (deleted rows) win by timestamp and remove the item locally. */
+function mergeItems(local, remote) {
+  const stamp = (it) => it.updatedAt || it.createdAt || 0;
+  const state = new Map();
+  for (const it of local) state.set(it.id, { item: it, updatedAt: stamp(it), deleted: false, source: 'local' });
+
+  for (const r of remote) {
+    const cur = state.get(r.id);
+    if (!cur || r.updatedAt > cur.updatedAt) {
+      state.set(r.id, { item: r.deleted ? null : r.item, updatedAt: r.updatedAt, deleted: !!r.deleted, source: 'remote' });
+    }
+  }
+
+  const merged = [];
+  const toPush = [];
+  for (const e of state.values()) {
+    if (e.deleted) continue;                 // tombstone → gone locally
+    if (e.item) merged.push(e.item);
+    if (e.source === 'local') toPush.push(e.item);  // remote missing or older
+  }
+  merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return { merged, toPush };
+}
+
+/* ============================================================
    Tools
    ============================================================ */
 
@@ -1970,7 +2001,10 @@ TOOLS.units = {
    My Recipes & Protocols — storage + shared rendering
    ============================================================ */
 
-const uid = () => 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+// Stable UUIDs so the same item reconciles across devices during sync.
+const uid = () => (globalThis.crypto && crypto.randomUUID)
+  ? crypto.randomUUID()
+  : 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 const getLibrary = () => { const v = store['library.items']; return Array.isArray(v) ? v : []; };
 const setLibrary = (items) => { store['library.items'] = items; writeStore(); };
 
@@ -1978,17 +2012,24 @@ function addLibraryItem(item) {
   const items = getLibrary();
   item.id = uid();
   item.createdAt = Date.now();
+  item.updatedAt = Date.now();
   items.unshift(item);
   setLibrary(items);
+  syncPushItem(item);           // no-op unless signed in + unlocked
   return item;
 }
 function updateLibraryItem(id, patch) {
   const items = getLibrary();
   const it = items.find(x => x.id === id);
-  if (it) Object.assign(it, patch);
+  if (it) { Object.assign(it, patch); it.updatedAt = Date.now(); }
   setLibrary(items);
+  if (it) syncPushItem(it);
 }
-function deleteLibraryItem(id) { setLibrary(getLibrary().filter(x => x.id !== id)); }
+function deleteLibraryItem(id) {
+  const it = getLibrary().find(x => x.id === id);
+  setLibrary(getLibrary().filter(x => x.id !== id));
+  syncPushTombstone(id, it && it.kind);
+}
 
 /* A saved component may predate the current fields; fill in physical state from the
    reagent table so % handling and MW fallback still work. */
@@ -2353,6 +2394,274 @@ TOOLS.library = {
     renderList(); renderDetail();
   },
   compute() { /* self-managed */ },
+};
+
+/* ============================================================
+   Accounts & end-to-end-encrypted sync (Supabase + e2e.js)
+   ============================================================ */
+
+let sb = null;           // supabase client, or null until configured + lib loaded
+let authSession = null;  // current auth session, or null
+let acctEnvelope = null; // stored crypto envelope for this account, or null
+let dataKey = null;      // unlocked data key — in memory only, never persisted
+let syncBusy = false;
+let syncMsg = '';
+
+const CRY = () => window.LabToolkitCrypto;
+
+function initSupabase() {
+  if (sb) return sb;
+  if (!SYNC_ENABLED || !window.supabase) return null;
+  const c = window.LABTOOLKIT_CONFIG;
+  sb = window.supabase.createClient(c.supabaseUrl, c.supabaseAnonKey, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' },
+  });
+  sb.auth.onAuthStateChange((_e, sess) => onSession(sess));
+  return sb;
+}
+
+async function onSession(sess) {
+  const prevId = authSession && authSession.user && authSession.user.id;
+  authSession = sess || null;
+  const newId = authSession && authSession.user && authSession.user.id;
+  if (!authSession) { acctEnvelope = null; dataKey = null; }
+  else if (prevId !== newId || acctEnvelope === null) { await loadEnvelope(); }
+  if (current === 'account') renderAccount($('#content'));
+}
+
+async function loadEnvelope() {
+  try {
+    const { data } = await sb.from('account_keys').select('envelope').eq('user_id', authSession.user.id).maybeSingle();
+    acctEnvelope = data ? data.envelope : null;
+  } catch { acctEnvelope = null; }
+}
+
+/* ---- auth ---- */
+async function signUpEmail(email, pw) {
+  const { data, error } = await sb.auth.signUp({ email, password: pw, options: { emailRedirectTo: location.origin } });
+  if (error) throw error;
+  return data.session ? 'signed-in' : 'confirm-email';
+}
+async function signInEmail(email, pw) {
+  const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+  if (error) throw error;
+}
+async function signInGoogle() {
+  const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
+  if (error) throw error;
+}
+async function signOutAccount() {
+  try { await sb.auth.signOut(); } catch {}
+  authSession = null; acctEnvelope = null; dataKey = null;
+}
+
+/* ---- encryption vault ---- */
+async function createVault(passphrase) {
+  const env = await CRY().createEnvelope(passphrase);
+  const { error } = await sb.from('account_keys').upsert({ user_id: authSession.user.id, envelope: env.stored, updated_at: new Date().toISOString() });
+  if (error) throw error;
+  acctEnvelope = env.stored;
+  dataKey = env.dataKey;
+  return env.recoveryKey;
+}
+async function unlockVault(passphrase) { dataKey = await CRY().unlockWithPassphrase(passphrase, acctEnvelope); await fullSync(); }
+async function unlockVaultRecovery(rec)  { dataKey = await CRY().unlockWithRecoveryKey(rec, acctEnvelope);   await fullSync(); }
+
+/* ---- sync ---- */
+const canSync = () => !!(sb && authSession && dataKey);
+
+async function syncPushItem(item) {
+  if (!canSync()) return;
+  try {
+    const payload = await CRY().encryptJSON(dataKey, item);
+    await sb.from('items').upsert({ id: item.id, user_id: authSession.user.id, kind: item.kind, payload, updated_at: new Date(item.updatedAt || Date.now()).toISOString(), deleted: false });
+  } catch {}
+}
+async function syncPushTombstone(id, kind) {
+  if (!canSync()) return;
+  try {
+    await sb.from('items').upsert({ id, user_id: authSession.user.id, kind: kind || 'recipe', payload: {}, updated_at: new Date().toISOString(), deleted: true });
+  } catch {}
+}
+
+async function fullSync() {
+  if (!canSync() || syncBusy) return;
+  syncBusy = true; syncMsg = 'Syncing…';
+  if (current === 'account') renderAccount($('#content'));
+  try {
+    const { data: rows, error } = await sb.from('items').select('id,kind,payload,updated_at,deleted');
+    if (error) throw error;
+    const remote = [];
+    for (const r of rows || []) {
+      let item = null;
+      if (!r.deleted) { try { item = await CRY().decryptJSON(dataKey, r.payload); } catch { continue; } }
+      remote.push({ id: r.id, kind: r.kind, updatedAt: Date.parse(r.updated_at), deleted: r.deleted, item });
+    }
+    const { merged, toPush } = mergeItems(getLibrary(), remote);
+    setLibrary(merged);
+    for (const it of toPush) await syncPushItem(it);
+    store['sync.lastAt'] = Date.now(); writeStore();
+    syncMsg = 'Last synced ' + new Date().toLocaleTimeString();
+    if (current === 'library') go('library');
+  } catch (e) {
+    syncMsg = 'Sync failed: ' + (e.message || 'error');
+  } finally {
+    syncBusy = false;
+    if (current === 'account') renderAccount($('#content'));
+  }
+}
+
+async function deleteAccountData() {
+  if (!sb || !authSession) return;
+  await sb.from('items').delete().eq('user_id', authSession.user.id);
+  await sb.from('account_keys').delete().eq('user_id', authSession.user.id);
+  await signOutAccount();
+}
+
+/* ---- Account UI ---- */
+
+function renderAccount(root) {
+  const box = root && $('#acctBody', root);
+  if (!box) return;
+
+  if (!SYNC_ENABLED) {
+    box.innerHTML = panel('', `<div class="muted">Accounts aren’t enabled in this build. The calculators and local saving work without an account.</div>`);
+    return;
+  }
+  if (!initSupabase()) {
+    box.innerHTML = panel('', `<div class="note">Couldn’t reach the accounts service — you may be offline, or opening the app as a file. The calculators still work and your saved items stay on this device.</div>`);
+    return;
+  }
+  if (!authSession) return acctSignedOut(box);
+  if (!acctEnvelope) return acctCreateVault(box);
+  if (!dataKey) return acctUnlock(box);
+  return acctUnlocked(box);
+}
+
+const bindSignOut = (box) => $('#acSignOut', box)?.addEventListener('click', async () => { await signOutAccount(); renderAccount($('#content')); });
+
+function acctSignedOut(box) {
+  box.innerHTML = `
+    ${panel('Sign in', `
+      <div class="grid g2">
+        <div class="field"><label for="acEmail">Email</label><input id="acEmail" type="email" autocomplete="email"></div>
+        <div class="field"><label for="acPw">Password</label><input id="acPw" type="password" autocomplete="current-password"></div>
+      </div>
+      <div class="chip-row" style="margin-top:12px">
+        <button class="primary-btn" id="acSignIn" type="button">Sign in</button>
+        <button class="ghost-btn" id="acSignUp" type="button">Create account</button>
+        <button class="ghost-btn" id="acGoogle" type="button">Continue with Google</button>
+      </div>
+      <div class="muted tiny" id="acMsg" style="margin-top:10px"></div>
+    `)}
+    ${panel('', `<div class="muted tiny">You don’t need an account to use LabToolkit. Signing in only adds encrypted sync of your saved recipes, protocols and plate layouts across devices.</div>`)}`;
+  const msg = (t) => { const m = $('#acMsg', box); if (m) m.textContent = t; };
+  const email = () => $('#acEmail', box).value.trim();
+  const pw = () => $('#acPw', box).value;
+  $('#acSignIn', box).addEventListener('click', async () => { msg('Signing in…'); try { await signInEmail(email(), pw()); } catch (e) { msg(e.message || 'Sign-in failed.'); } });
+  $('#acSignUp', box).addEventListener('click', async () => { msg('Creating account…'); try { const r = await signUpEmail(email(), pw()); msg(r === 'confirm-email' ? 'Check your email to confirm, then sign in.' : 'Account created.'); } catch (e) { msg(e.message || 'Sign-up failed.'); } });
+  $('#acGoogle', box).addEventListener('click', async () => { try { await signInGoogle(); } catch (e) { msg(e.message || 'Google sign-in failed.'); } });
+}
+
+function acctCreateVault(box) {
+  box.innerHTML = panel('Set your encryption passphrase', `
+    <p class="muted" style="margin:0 0 10px">Signed in as <b>${esc(authSession.user.email || 'your account')}</b>. Now set an <b>encryption passphrase</b> that protects your synced data. It never leaves this device — so neither Supabase nor we can read your saved items. It is separate from your login password.</p>
+    <div class="grid g2">
+      <div class="field"><label for="acPass">Encryption passphrase</label><input id="acPass" type="password" autocomplete="new-password"></div>
+      <div class="field"><label for="acPass2">Confirm passphrase</label><input id="acPass2" type="password" autocomplete="new-password"></div>
+    </div>
+    <div class="chip-row" style="margin-top:12px">
+      <button class="primary-btn" id="acCreate" type="button">Create encrypted vault</button>
+      <button class="ghost-btn" id="acSignOut" type="button">Sign out</button>
+    </div>
+    <div class="note" style="margin-top:12px">If you forget this passphrase <b>and</b> lose your recovery key, your synced data can’t be recovered — by design, because it means only you can read it.</div>
+    <div class="muted tiny" id="acMsg" style="margin-top:8px"></div>
+  `);
+  bindSignOut(box);
+  const msg = (t) => { const m = $('#acMsg', box); if (m) m.textContent = t; };
+  $('#acCreate', box).addEventListener('click', async () => {
+    const p1 = $('#acPass', box).value, p2 = $('#acPass2', box).value;
+    if (p1.length < 8) return msg('Use at least 8 characters.');
+    if (p1 !== p2) return msg('Passphrases don’t match.');
+    msg('Creating your encrypted vault…');
+    try { const rec = await createVault(p1); acctShowRecovery(box, rec); }
+    catch (e) { msg(e.message || 'Could not create the vault.'); }
+  });
+}
+
+function acctShowRecovery(box, rec) {
+  box.innerHTML = panel('Save your recovery key', `
+    <p class="muted" style="margin:0 0 10px">This is the <b>only</b> way to recover your data if you forget your passphrase. Store it somewhere safe, like a password manager. It won’t be shown again.</p>
+    <div class="result"><div class="result-main" style="font-family:var(--mono);font-size:19px;letter-spacing:1px;overflow-wrap:anywhere">${esc(rec)}</div></div>
+    <div class="chip-row"><button class="ghost-btn" id="acCopyRec" type="button">Copy</button><button class="primary-btn" id="acRecDone" type="button">I’ve saved it — continue</button></div>
+  `);
+  $('#acCopyRec', box).addEventListener('click', () => navigator.clipboard.writeText(rec).catch(() => {}));
+  $('#acRecDone', box).addEventListener('click', async () => { await fullSync(); renderAccount($('#content')); });
+}
+
+function acctUnlock(box) {
+  box.innerHTML = panel('Unlock your data', `
+    <p class="muted" style="margin:0 0 10px">Signed in as <b>${esc(authSession.user.email || 'your account')}</b>. Enter your encryption passphrase to unlock and sync your saved items on this device.</p>
+    <div class="field" style="max-width:340px"><label for="acPass">Encryption passphrase</label><input id="acPass" type="password" autocomplete="current-password"></div>
+    <div class="chip-row" style="margin-top:12px">
+      <button class="primary-btn" id="acUnlock" type="button">Unlock</button>
+      <button class="ghost-btn" id="acUseRec" type="button">Use recovery key</button>
+      <button class="ghost-btn" id="acSignOut" type="button">Sign out</button>
+    </div>
+    <div class="muted tiny" id="acMsg" style="margin-top:10px"></div>
+  `);
+  bindSignOut(box);
+  const msg = (t) => { const m = $('#acMsg', box); if (m) m.textContent = t; };
+  $('#acUnlock', box).addEventListener('click', async () => { msg('Unlocking…'); try { await unlockVault($('#acPass', box).value); renderAccount($('#content')); } catch { msg('Wrong passphrase — try again, or use your recovery key.'); } });
+  $('#acUseRec', box).addEventListener('click', () => {
+    box.innerHTML = panel('Recover with your recovery key', `
+      <div class="field"><label for="acRec">Recovery key</label><input id="acRec" type="text" autocomplete="off" placeholder="XXXX-XXXX-XXXX-…"></div>
+      <div class="chip-row" style="margin-top:12px"><button class="primary-btn" id="acRecGo" type="button">Unlock</button><button class="ghost-btn" id="acSignOut" type="button">Sign out</button></div>
+      <div class="muted tiny" id="acMsg" style="margin-top:10px"></div>`);
+    bindSignOut(box);
+    const m2 = (t) => { const m = $('#acMsg', box); if (m) m.textContent = t; };
+    $('#acRecGo', box).addEventListener('click', async () => { m2('Unlocking…'); try { await unlockVaultRecovery($('#acRec', box).value); renderAccount($('#content')); } catch { m2('That recovery key didn’t work.'); } });
+  });
+}
+
+function acctUnlocked(box) {
+  box.innerHTML = `
+    ${panel('Account', readout([
+      ['Signed in as', esc(authSession.user.email || '—')],
+      ['Sync', 'End-to-end encrypted'],
+      ['Status', esc(syncBusy ? 'Syncing…' : (syncMsg || (store['sync.lastAt'] ? 'Last synced ' + new Date(store['sync.lastAt']).toLocaleTimeString() : 'Ready')))],
+    ]))}
+    ${panel('', `<div class="chip-row">
+      <button class="primary-btn" id="acSyncNow" type="button">Sync now</button>
+      <button class="ghost-btn" id="acSignOut" type="button">Sign out</button>
+    </div>`)}
+    ${panel('Your data (GDPR)', `
+      <div class="chip-row">
+        <button class="ghost-btn" id="acExport" type="button">Download my data</button>
+        <button class="ghost-btn" id="acDelete" type="button">Delete account data</button>
+      </div>
+      <div class="muted tiny" style="margin-top:10px">Download gives you all your saved items, decrypted, as JSON. Delete permanently removes your synced items and encryption keys from the server and signs you out — because the data is encrypted with a key only you hold, deleting the keys already makes any residual copy unreadable.</div>`)}`;
+  bindSignOut(box);
+  $('#acSyncNow', box).addEventListener('click', () => fullSync());
+  $('#acExport', box).addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify({ app: 'LabToolkit', exportedAt: new Date().toISOString(), items: getLibrary() }, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'labtoolkit-my-data.json'; a.click(); URL.revokeObjectURL(a.href);
+  });
+  $('#acDelete', box).addEventListener('click', async () => {
+    if (!confirm('Permanently delete all your synced data and encryption keys from the server, and sign out? Items saved on this device are kept locally. This cannot be undone.')) return;
+    try { await deleteAccountData(); renderAccount($('#content')); } catch (e) { alert('Delete failed: ' + (e.message || 'error')); }
+  });
+}
+
+TOOLS.account = {
+  group: 'Account',
+  system: true,
+  name: 'Account & sync',
+  title: 'Account & sync',
+  blurb: 'Optional. Sign in to sync your saved recipes, protocols and plate layouts across your devices — encrypted on your device so only you can read them.',
+  render() { return `<div id="acctBody"></div>`; },
+  mount(root) { renderAccount(root); },
+  compute() {},
 };
 
 /* ---------- Customize toolkit (system) ---------- */
@@ -2787,6 +3096,11 @@ if (installBtn) {
         + 'The page must be opened from its web address (https), not a downloaded file.');
     }
   });
+}
+
+// Restore any existing account session (and handle the OAuth redirect) on load.
+if (SYNC_ENABLED && initSupabase()) {
+  sb.auth.getSession().then(({ data }) => onSession(data.session)).catch(() => {});
 }
 
 go(location.hash.slice(1) || store['labtoolkit.last'] || 'molarity');

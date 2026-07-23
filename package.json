@@ -4,10 +4,11 @@
   "private": true,
   "description": "A fast, clean suite of wet-lab bench calculators. Entirely client-side.",
   "scripts": {
-    "test": "node mathtest.js && node parsetest.js && node cryptotest.js && node uitest.js",
+    "test": "node mathtest.js && node parsetest.js && node cryptotest.js && node synctest.js && node uitest.js",
     "test:math": "node mathtest.js",
     "test:parse": "node parsetest.js",
     "test:crypto": "node cryptotest.js",
+    "test:sync": "node synctest.js",
     "test:ui": "node uitest.js",
     "icons": "node tools/make-icons.js",
     "start": "python3 -m http.server 8731"

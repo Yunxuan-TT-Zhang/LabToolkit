@@ -22,9 +22,9 @@ const nav=(tool)=>{ doc.querySelector(`[data-tool="${tool}"]`).click(); };
 const main=()=>$('.result-main')?$('.result-main').textContent.trim():'(no result)';
 
 console.log('=== boot ===');
-eq('nav rendered (15 tools + 2 system)', doc.querySelectorAll('#nav .nav-item').length, 17);
+eq('nav rendered (15 tools + 3 system)', doc.querySelectorAll('#nav .nav-item').length, 18);
 eq('default tool is molarity', $('#topbarTitle').textContent, 'Molarity & mass');
-eq('customize + about pinned in nav', !!$('[data-tool="settings"]') && !!$('[data-tool="about"]'), true);
+eq('account + customize + about pinned in nav', !!$('[data-tool="account"]') && !!$('[data-tool="settings"]') && !!$('[data-tool="about"]'), true);
 
 console.log('\n=== molarity ===');
 // 58.44 g/mol NaCl, 5 M, 100 mL  -> 29.22 g
@@ -208,6 +208,12 @@ eq('export button present', !!$('#aboutExport'), true);
 eq('delete button present', !!$('#aboutWipe'), true);
 let exportThrew=false; try { $('#aboutExport').click(); } catch(e){ exportThrew=true; }
 eq('export does not throw', exportThrew, false);
+
+console.log('\n=== account tool (local build: no backend configured) ===');
+nav('account');
+eq('account tool renders', $('#topbarTitle').textContent, 'Account & sync');
+eq('shows not-enabled message without backend config', $('#acctBody').textContent, /aren.t enabled|Couldn.t reach/);
+eq('account tool did not throw', true, true);
 
 console.log('\n=== dismissible footer ===');
 eq('footer shown by default', $('#foot').hidden, false);
