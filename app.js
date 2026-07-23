@@ -2397,17 +2397,20 @@ TOOLS.library = {
 };
 
 /* ============================================================
-   Accounts & end-to-end-encrypted sync (Supabase + e2e.js)
+   Accounts & sync (Supabase)
    ============================================================ */
 
-let sb = null;           // supabase client, or null until configured + lib loaded
-let authSession = null;  // current auth session, or null
-let acctEnvelope = null; // stored crypto envelope for this account, or null
-let dataKey = null;      // unlocked data key — in memory only, never persisted
+/* PRIVACY MODEL: synced items are stored on the server, protected by per-user Row-Level
+   Security and Supabase's encryption at rest. This is NOT end-to-end encryption — the
+   operator can, in principle, read stored rows. This model was chosen so a standard
+   "forgot password" reset can restore a user's data (only possible if the server can
+   recover it). The UI states this plainly. Local-only use needs no account. */
+
+let sb = null;             // supabase client, or null until configured + lib loaded
+let authSession = null;    // current auth session, or null
+let recoveryMode = false;  // true when arriving from a password-reset email link
 let syncBusy = false;
 let syncMsg = '';
-
-const CRY = () => window.LabToolkitCrypto;
 
 function initSupabase() {
   if (sb) return sb;
@@ -2416,25 +2419,24 @@ function initSupabase() {
   sb = window.supabase.createClient(c.supabaseUrl, c.supabaseAnonKey, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' },
   });
-  sb.auth.onAuthStateChange((_e, sess) => onSession(sess));
+  sb.auth.onAuthStateChange((event, sess) => onAuth(event, sess));
   return sb;
 }
 
-async function onSession(sess) {
-  const prevId = authSession && authSession.user && authSession.user.id;
+async function onAuth(event, sess) {
+  if (event === 'PASSWORD_RECOVERY') {
+    recoveryMode = true;
+    authSession = sess || authSession;
+    updateAuthButton();
+    if (current !== 'account') go('account'); else renderAccount($('#content'));
+    return;
+  }
+  const had = !!authSession;
   authSession = sess || null;
-  const newId = authSession && authSession.user && authSession.user.id;
-  if (!authSession) { acctEnvelope = null; dataKey = null; }
-  else if (prevId !== newId || acctEnvelope === null) { await loadEnvelope(); }
+  recoveryMode = false;
   updateAuthButton();
   if (current === 'account') renderAccount($('#content'));
-}
-
-async function loadEnvelope() {
-  try {
-    const { data } = await sb.from('account_keys').select('envelope').eq('user_id', authSession.user.id).maybeSingle();
-    acctEnvelope = data ? data.envelope : null;
-  } catch { acctEnvelope = null; }
+  if (authSession && (!had || event === 'SIGNED_IN')) fullSync();
 }
 
 /* ---- auth ---- */
@@ -2451,31 +2453,27 @@ async function signInGoogle() {
   const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
   if (error) throw error;
 }
+async function sendPasswordReset(email) {
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin });
+  if (error) throw error;
+}
+async function setNewPassword(pw) {
+  const { error } = await sb.auth.updateUser({ password: pw });
+  if (error) throw error;
+  recoveryMode = false;
+}
 async function signOutAccount() {
   try { await sb.auth.signOut(); } catch {}
-  authSession = null; acctEnvelope = null; dataKey = null;
+  authSession = null; recoveryMode = false;
 }
 
-/* ---- encryption vault ---- */
-async function createVault(passphrase) {
-  const env = await CRY().createEnvelope(passphrase);
-  const { error } = await sb.from('account_keys').upsert({ user_id: authSession.user.id, envelope: env.stored, updated_at: new Date().toISOString() });
-  if (error) throw error;
-  acctEnvelope = env.stored;
-  dataKey = env.dataKey;
-  return env.recoveryKey;
-}
-async function unlockVault(passphrase) { dataKey = await CRY().unlockWithPassphrase(passphrase, acctEnvelope); await fullSync(); }
-async function unlockVaultRecovery(rec)  { dataKey = await CRY().unlockWithRecoveryKey(rec, acctEnvelope);   await fullSync(); }
-
-/* ---- sync ---- */
-const canSync = () => !!(sb && authSession && dataKey);
+/* ---- sync (plaintext payload — see privacy note above) ---- */
+const canSync = () => !!(sb && authSession);
 
 async function syncPushItem(item) {
   if (!canSync()) return;
   try {
-    const payload = await CRY().encryptJSON(dataKey, item);
-    await sb.from('items').upsert({ id: item.id, user_id: authSession.user.id, kind: item.kind, payload, updated_at: new Date(item.updatedAt || Date.now()).toISOString(), deleted: false });
+    await sb.from('items').upsert({ id: item.id, user_id: authSession.user.id, kind: item.kind, payload: item, updated_at: new Date(item.updatedAt || Date.now()).toISOString(), deleted: false });
   } catch {}
 }
 async function syncPushTombstone(id, kind) {
@@ -2492,12 +2490,7 @@ async function fullSync() {
   try {
     const { data: rows, error } = await sb.from('items').select('id,kind,payload,updated_at,deleted');
     if (error) throw error;
-    const remote = [];
-    for (const r of rows || []) {
-      let item = null;
-      if (!r.deleted) { try { item = await CRY().decryptJSON(dataKey, r.payload); } catch { continue; } }
-      remote.push({ id: r.id, kind: r.kind, updatedAt: Date.parse(r.updated_at), deleted: r.deleted, item });
-    }
+    const remote = (rows || []).map(r => ({ id: r.id, kind: r.kind, updatedAt: Date.parse(r.updated_at), deleted: r.deleted, item: r.deleted ? null : r.payload }));
     const { merged, toPush } = mergeItems(getLibrary(), remote);
     setLibrary(merged);
     for (const it of toPush) await syncPushItem(it);
@@ -2515,7 +2508,6 @@ async function fullSync() {
 async function deleteAccountData() {
   if (!sb || !authSession) return;
   await sb.from('items').delete().eq('user_id', authSession.user.id);
-  await sb.from('account_keys').delete().eq('user_id', authSession.user.id);
   await signOutAccount();
 }
 
@@ -2524,7 +2516,6 @@ async function deleteAccountData() {
 function renderAccount(root) {
   const box = root && $('#acctBody', root);
   if (!box) return;
-
   if (!SYNC_ENABLED) {
     box.innerHTML = panel('', `<div class="muted">Accounts aren’t enabled in this build. The calculators and local saving work without an account.</div>`);
     return;
@@ -2533,10 +2524,9 @@ function renderAccount(root) {
     box.innerHTML = panel('', `<div class="note">Couldn’t reach the accounts service — you may be offline, or opening the app as a file. The calculators still work and your saved items stay on this device.</div>`);
     return;
   }
+  if (recoveryMode) return acctSetNewPassword(box);
   if (!authSession) return acctSignedOut(box);
-  if (!acctEnvelope) return acctCreateVault(box);
-  if (!dataKey) return acctUnlock(box);
-  return acctUnlocked(box);
+  return acctSignedIn(box);
 }
 
 const bindSignOut = (box) => $('#acSignOut', box)?.addEventListener('click', async () => { await signOutAccount(); renderAccount($('#content')); });
@@ -2552,84 +2542,51 @@ function acctSignedOut(box) {
         <button class="primary-btn" id="acSignIn" type="button">Sign in</button>
         <button class="ghost-btn" id="acSignUp" type="button">Create account</button>
         <button class="ghost-btn" id="acGoogle" type="button">Continue with Google</button>
+        <button class="ghost-btn" id="acForgot" type="button">Forgot password?</button>
       </div>
       <div class="muted tiny" id="acMsg" style="margin-top:10px"></div>
     `)}
-    ${panel('', `<div class="muted tiny">You don’t need an account to use LabToolkit. Signing in only adds encrypted sync of your saved recipes, protocols and plate layouts across devices.</div>`)}`;
+    ${panel('', `<div class="muted tiny">You don’t need an account to use LabToolkit — the calculators and local saving work without one. Signing in syncs your saved recipes, protocols and plate layouts across your devices. Synced items are stored on our server, private to your account (but not end-to-end encrypted) — see About &amp; privacy.</div>`)}`;
   const msg = (t) => { const m = $('#acMsg', box); if (m) m.textContent = t; };
   const email = () => $('#acEmail', box).value.trim();
   const pw = () => $('#acPw', box).value;
   $('#acSignIn', box).addEventListener('click', async () => { msg('Signing in…'); try { await signInEmail(email(), pw()); } catch (e) { msg(e.message || 'Sign-in failed.'); } });
   $('#acSignUp', box).addEventListener('click', async () => { msg('Creating account…'); try { const r = await signUpEmail(email(), pw()); msg(r === 'confirm-email' ? 'Check your email to confirm, then sign in.' : 'Account created.'); } catch (e) { msg(e.message || 'Sign-up failed.'); } });
   $('#acGoogle', box).addEventListener('click', async () => { try { await signInGoogle(); } catch (e) { msg(e.message || 'Google sign-in failed.'); } });
-}
-
-function acctCreateVault(box) {
-  box.innerHTML = panel('Set your encryption passphrase', `
-    <p class="muted" style="margin:0 0 10px">Signed in as <b>${esc(authSession.user.email || 'your account')}</b>. Now set an <b>encryption passphrase</b> that protects your synced data. It never leaves this device — so neither Supabase nor we can read your saved items. It is separate from your login password.</p>
-    <div class="grid g2">
-      <div class="field"><label for="acPass">Encryption passphrase</label><input id="acPass" type="password" autocomplete="new-password"></div>
-      <div class="field"><label for="acPass2">Confirm passphrase</label><input id="acPass2" type="password" autocomplete="new-password"></div>
-    </div>
-    <div class="chip-row" style="margin-top:12px">
-      <button class="primary-btn" id="acCreate" type="button">Create encrypted vault</button>
-      <button class="ghost-btn" id="acSignOut" type="button">Sign out</button>
-    </div>
-    <div class="note" style="margin-top:12px">If you forget this passphrase <b>and</b> lose your recovery key, your synced data can’t be recovered — by design, because it means only you can read it.</div>
-    <div class="muted tiny" id="acMsg" style="margin-top:8px"></div>
-  `);
-  bindSignOut(box);
-  const msg = (t) => { const m = $('#acMsg', box); if (m) m.textContent = t; };
-  $('#acCreate', box).addEventListener('click', async () => {
-    const p1 = $('#acPass', box).value, p2 = $('#acPass2', box).value;
-    if (p1.length < 8) return msg('Use at least 8 characters.');
-    if (p1 !== p2) return msg('Passphrases don’t match.');
-    msg('Creating your encrypted vault…');
-    try { const rec = await createVault(p1); acctShowRecovery(box, rec); }
-    catch (e) { msg(e.message || 'Could not create the vault.'); }
+  $('#acForgot', box).addEventListener('click', async () => {
+    const e = email();
+    if (!e) return msg('Enter your email above first, then tap Forgot password.');
+    msg('Sending reset link…');
+    try { await sendPasswordReset(e); msg(`If an account exists for ${e}, a password-reset link is on its way. Open it on this device.`); }
+    catch (err) { msg(err.message || 'Could not send the reset email.'); }
   });
 }
 
-function acctShowRecovery(box, rec) {
-  box.innerHTML = panel('Save your recovery key', `
-    <p class="muted" style="margin:0 0 10px">This is the <b>only</b> way to recover your data if you forget your passphrase. Store it somewhere safe, like a password manager. It won’t be shown again.</p>
-    <div class="result"><div class="result-main" style="font-family:var(--mono);font-size:19px;letter-spacing:1px;overflow-wrap:anywhere">${esc(rec)}</div></div>
-    <div class="chip-row"><button class="ghost-btn" id="acCopyRec" type="button">Copy</button><button class="primary-btn" id="acRecDone" type="button">I’ve saved it — continue</button></div>
-  `);
-  $('#acCopyRec', box).addEventListener('click', () => navigator.clipboard.writeText(rec).catch(() => {}));
-  $('#acRecDone', box).addEventListener('click', async () => { await fullSync(); renderAccount($('#content')); });
-}
-
-function acctUnlock(box) {
-  box.innerHTML = panel('Unlock your data', `
-    <p class="muted" style="margin:0 0 10px">Signed in as <b>${esc(authSession.user.email || 'your account')}</b>. Enter your encryption passphrase to unlock and sync your saved items on this device.</p>
-    <div class="field" style="max-width:340px"><label for="acPass">Encryption passphrase</label><input id="acPass" type="password" autocomplete="current-password"></div>
-    <div class="chip-row" style="margin-top:12px">
-      <button class="primary-btn" id="acUnlock" type="button">Unlock</button>
-      <button class="ghost-btn" id="acUseRec" type="button">Use recovery key</button>
-      <button class="ghost-btn" id="acSignOut" type="button">Sign out</button>
+function acctSetNewPassword(box) {
+  box.innerHTML = panel('Set a new password', `
+    <p class="muted" style="margin:0 0 10px">Resetting the password for <b>${esc((authSession && authSession.user && authSession.user.email) || 'your account')}</b>. Choose a new one.</p>
+    <div class="grid g2">
+      <div class="field"><label for="acNew1">New password</label><input id="acNew1" type="password" autocomplete="new-password"></div>
+      <div class="field"><label for="acNew2">Confirm password</label><input id="acNew2" type="password" autocomplete="new-password"></div>
     </div>
+    <div class="chip-row" style="margin-top:12px"><button class="primary-btn" id="acSetPw" type="button">Save new password</button></div>
     <div class="muted tiny" id="acMsg" style="margin-top:10px"></div>
   `);
-  bindSignOut(box);
   const msg = (t) => { const m = $('#acMsg', box); if (m) m.textContent = t; };
-  $('#acUnlock', box).addEventListener('click', async () => { msg('Unlocking…'); try { await unlockVault($('#acPass', box).value); renderAccount($('#content')); } catch { msg('Wrong passphrase — try again, or use your recovery key.'); } });
-  $('#acUseRec', box).addEventListener('click', () => {
-    box.innerHTML = panel('Recover with your recovery key', `
-      <div class="field"><label for="acRec">Recovery key</label><input id="acRec" type="text" autocomplete="off" placeholder="XXXX-XXXX-XXXX-…"></div>
-      <div class="chip-row" style="margin-top:12px"><button class="primary-btn" id="acRecGo" type="button">Unlock</button><button class="ghost-btn" id="acSignOut" type="button">Sign out</button></div>
-      <div class="muted tiny" id="acMsg" style="margin-top:10px"></div>`);
-    bindSignOut(box);
-    const m2 = (t) => { const m = $('#acMsg', box); if (m) m.textContent = t; };
-    $('#acRecGo', box).addEventListener('click', async () => { m2('Unlocking…'); try { await unlockVaultRecovery($('#acRec', box).value); renderAccount($('#content')); } catch { m2('That recovery key didn’t work.'); } });
+  $('#acSetPw', box).addEventListener('click', async () => {
+    const a = $('#acNew1', box).value, b = $('#acNew2', box).value;
+    if (a.length < 8) return msg('Use at least 8 characters.');
+    if (a !== b) return msg('Passwords don’t match.');
+    msg('Saving…');
+    try { await setNewPassword(a); renderAccount($('#content')); } catch (e) { msg(e.message || 'Could not update the password.'); }
   });
 }
 
-function acctUnlocked(box) {
+function acctSignedIn(box) {
   box.innerHTML = `
     ${panel('Account', readout([
       ['Signed in as', esc(authSession.user.email || '—')],
-      ['Sync', 'End-to-end encrypted'],
+      ['Sync', 'On (across your devices)'],
       ['Status', esc(syncBusy ? 'Syncing…' : (syncMsg || (store['sync.lastAt'] ? 'Last synced ' + new Date(store['sync.lastAt']).toLocaleTimeString() : 'Ready')))],
     ]))}
     ${panel('', `<div class="chip-row">
@@ -2641,7 +2598,7 @@ function acctUnlocked(box) {
         <button class="ghost-btn" id="acExport" type="button">Download my data</button>
         <button class="ghost-btn" id="acDelete" type="button">Delete account data</button>
       </div>
-      <div class="muted tiny" style="margin-top:10px">Download gives you all your saved items, decrypted, as JSON. Delete permanently removes your synced items and encryption keys from the server and signs you out — because the data is encrypted with a key only you hold, deleting the keys already makes any residual copy unreadable.</div>`)}`;
+      <div class="muted tiny" style="margin-top:10px">Download gives you all your saved items as JSON. Delete permanently removes every item synced to your account from the server and signs you out. Items saved on this device stay in this browser until you clear them (see About &amp; privacy).</div>`)}`;
   bindSignOut(box);
   $('#acSyncNow', box).addEventListener('click', () => fullSync());
   $('#acExport', box).addEventListener('click', () => {
@@ -2649,7 +2606,7 @@ function acctUnlocked(box) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'labtoolkit-my-data.json'; a.click(); URL.revokeObjectURL(a.href);
   });
   $('#acDelete', box).addEventListener('click', async () => {
-    if (!confirm('Permanently delete all your synced data and encryption keys from the server, and sign out? Items saved on this device are kept locally. This cannot be undone.')) return;
+    if (!confirm('Permanently delete every item synced to your account from the server, and sign out? Items saved on this device are kept locally. This cannot be undone.')) return;
     try { await deleteAccountData(); renderAccount($('#content')); } catch (e) { alert('Delete failed: ' + (e.message || 'error')); }
   });
 }
@@ -2659,7 +2616,7 @@ TOOLS.account = {
   system: true,
   name: 'Account & sync',
   title: 'Account & sync',
-  blurb: 'Optional. Sign in to sync your saved recipes, protocols and plate layouts across your devices — encrypted on your device so only you can read them.',
+  blurb: 'Optional. Sign in to sync your saved recipes, protocols and plate layouts across your devices. Synced items are private to your account, but not end-to-end encrypted.',
   render() { return `<div id="acctBody"></div>`; },
   mount(root) { renderAccount(root); },
   compute() {},
@@ -2735,10 +2692,13 @@ TOOLS.about = {
         <div class="stack">
           <p style="margin:0">The <b>calculators run entirely in your browser</b>. Numbers you type into a
           calculator are never sent anywhere.</p>
-          <p style="margin:0">Your <b>saved recipes and protocols</b> are stored on this device.
+          <p style="margin:0">Your <b>saved recipes, protocols and plate layouts</b> are stored on this device.
           ${SYNC_ENABLED
-            ? `When you are signed in they also sync to your account — <b>encrypted on your device first</b>,
-               so we only ever hold data we cannot read.`
+            ? `If you <b>sign in</b>, they also sync to your account so you can reach them on other devices.
+               Synced items are stored on our server and are private to your account (protected by
+               per-user access control and encryption at rest), but they are <b>not end-to-end encrypted</b> —
+               so, like any hosted service, they are technically readable by the operator. Don’t sync anything
+               you need to keep provably private; keep that local-only (don’t sign in), or export it.`
             : `Account sign-in and cross-device sync are coming; until then nothing you save leaves this device.`}</p>
           <p style="margin:0">Photographs you scan are read on your device (in-browser OCR). The image is
           not uploaded.</p>
@@ -3087,10 +3047,9 @@ if (installBtn) {
   });
 }
 
-// Restore any existing account session (and handle the OAuth redirect) on load.
-if (SYNC_ENABLED && initSupabase()) {
-  sb.auth.getSession().then(({ data }) => onSession(data.session)).catch(() => {});
-}
+// Initialise auth on load. The onAuthStateChange listener fires INITIAL_SESSION to restore
+// an existing session, handle the OAuth redirect, and catch password-recovery links.
+if (SYNC_ENABLED) initSupabase();
 
 go(location.hash.slice(1) || store['labtoolkit.last'] || 'molarity');
 

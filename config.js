@@ -1,8 +1,8 @@
 /* LabToolkit runtime configuration.
  *
- * These switch on optional accounts + end-to-end-encrypted sync. Leaving them blank runs
- * the app in fully local, no-account mode (the calculators and local saving work either
- * way). See SETUP.md.
+ * These switch on optional accounts + cross-device sync. Leaving them blank runs the app in
+ * fully local, no-account mode (the calculators and local saving work either way). See
+ * SETUP.md.
  *
  * The anon/publishable key is PUBLIC by design — it is safe to ship in the browser because
  * every table is protected by Row-Level Security, and saved content is encrypted on the

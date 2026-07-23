@@ -1,40 +1,36 @@
 # LabToolkit — accounts & sync setup
 
 LabToolkit works fully **without** any of this: the calculators run in the browser and
-saved recipes/protocols live in `localStorage`. Accounts add **optional, end-to-end
-encrypted** cross-device sync. This document is how you turn that on.
+saved recipes/protocols live in `localStorage`. Accounts add **optional** cross-device sync.
+This document is how you turn that on.
 
 Until `config.js` has real values, the app stays in local-only mode and says so on the
 **About & privacy** page.
 
 ## Architecture at a glance
 
-- **Frontend** — the existing static site (no build step). Hosted on Cloudflare Pages (or
-  GitHub Pages) at `thelabtoolkit.com`.
+- **Frontend** — the existing static site (no build step). Hosted on GitHub Pages (or
+  Cloudflare Pages) at `thelabtoolkit.com`.
 - **Backend** — [Supabase](https://supabase.com): Postgres + Auth + Storage, guarded by
   Row-Level Security so a user can only touch their own rows.
-- **Privacy** — every recipe, protocol and uploaded file is encrypted **in the browser**
-  (`e2e.js`, WebCrypto AES-GCM) before upload. The server stores ciphertext only. Neither
-  Supabase nor you can read user content. See "The privacy model" below.
 
-## The privacy model (read before launch)
+## Privacy model (read before launch)
 
-Each account has a random 256-bit **data key** that encrypts its content. That data key is
-stored **only** in wrapped (encrypted) form:
+Synced items are stored in the `items` table as their JSON payload, protected by:
 
-- wrapped by a key derived from the user's **passphrase** (PBKDF2-SHA256, 210k iterations),
-- wrapped again by a random **recovery key** shown once at signup.
+- **Row-Level Security** — a user can only read/write their own rows.
+- **Encryption at rest** — Supabase encrypts the database on disk.
 
-Consequences, by design:
+This is **not** end-to-end encryption. The operator (you), via the Supabase dashboard or the
+`service_role` key, can in principle read stored rows. This model was chosen deliberately so
+a standard **"forgot password" email reset can restore a user's data** — which is only
+possible if the server can recover it. End-to-end encryption and a data-restoring password
+reset are mutually exclusive.
 
-- The server never sees the passphrase, the recovery key, or the data key in the clear.
-- **If a user forgets both their passphrase and recovery key, their data is unrecoverable.**
-  There is no reset that restores content — that is the price of you not being able to read
-  it. The signup flow must make the user save the recovery key.
-- A password *change* re-wraps the data key; it does not (and cannot) re-encrypt on the
-  server, because the server can't read it.
-
-This is validated by `npm run test:crypto`.
+The UI states this honestly (Account page + About & privacy): users are told synced data is
+"private to your account but not end-to-end encrypted", and advised to keep anything that
+must be provably private local-only (don't sign in) or exported. The sync-reconciliation
+logic is validated by `npm run test:sync`.
 
 ## One-time Supabase setup
 
@@ -55,17 +51,25 @@ This is validated by `npm run test:crypto`.
 
 That's it — the account UI activates automatically once the config is present.
 
+## Accounts & password reset
+
+- Sign in with **email/password** or **Google** (OAuth, PKCE).
+- **Forgot password** sends a Supabase reset email; the link returns the user to the app in a
+  "set a new password" state. This restores access to their synced data — possible precisely
+  because sync is not end-to-end encrypted.
+- Supabase's **email confirmation** is on by default, so email sign-ups get a "check your
+  email" step. Turn it off in Auth settings for instant sign-up if you prefer (Google skips it).
+
 ## GDPR
 
-- **Export** — the About & privacy page downloads everything (decrypted locally) as JSON.
-- **Delete** — deletes the user's rows, their storage objects, and their auth record. Because
-  content is encrypted with a key only they hold, deleting the wrapped data key alone already
-  renders every remaining blob permanently unreadable.
+- **Export** — the Account page (and About & privacy) downloads all saved items as JSON.
+- **Delete** — "Delete account data" removes every row synced to the user's account from the
+  server and signs them out. Full auth-user record deletion needs an admin call (service_role
+  or an edge function); wire that in if you need the auth record itself removed.
 
 ## What's built vs. pending
 
-- **Built & tested now:** the encryption core (`e2e.js` + `npm run test:crypto`), local-only
-  mode, tool customization, honest messaging, and local export/delete.
-- **Pending (needs your live Supabase project to build against):** the sign-in/sign-up UI,
-  the sync engine, server-side GDPR delete, and the uploaded-document protocol library.
-  These are deliberately not shipped untested.
+- **Built & tested now:** email + Google sign-in, forgot-password reset, cross-device sync
+  (`npm run test:sync`), tool customization, honest messaging, local + account export/delete.
+- **Pending:** the uploaded-document (PDF/image) protocol library, which reuses the private
+  `documents` storage bucket (confirm the bucket exists first).
