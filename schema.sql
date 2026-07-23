@@ -43,6 +43,15 @@ create policy items_owner on public.items
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------
+-- Table privileges. RLS filters *rows*, but the API roles still need base table
+-- privileges. We grant only to `authenticated` (signed-in users) — never to `anon`,
+-- since the calculators need no database access at all.
+-- ---------------------------------------------------------------------------
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.items        to authenticated;
+grant select, insert, update, delete on public.account_keys to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Encrypted file storage (uploaded PDFs / images for the protocol library).
 -- The bucket is private; objects are encrypted before upload. Access is scoped so the
 -- first path segment must be the owner's user id, e.g. "<uid>/<item-id>".

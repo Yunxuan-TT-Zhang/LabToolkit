@@ -209,6 +209,12 @@ eq('delete button present', !!$('#aboutWipe'), true);
 let exportThrew=false; try { $('#aboutExport').click(); } catch(e){ exportThrew=true; }
 eq('export does not throw', exportThrew, false);
 
+console.log('\n=== dismissible footer ===');
+eq('footer shown by default', $('#foot').hidden, false);
+$('#footClose').click();
+eq('footer hides when dismissed', $('#foot').hidden, true);
+eq('footer dismissal persisted', JSON.parse(window.localStorage.getItem('labtoolkit.v1'))['foot.dismissed'], true);
+
 console.log('\n=== copy + theme ===');
 nav('molarity');
 $('#copyBtn').click();

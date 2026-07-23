@@ -150,7 +150,23 @@ nav { padding: 4px 8px 8px; flex: 1; }
   border-top: 1px solid var(--line);
   padding: 10px 18px;
   background: var(--panel);
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
+.foot[hidden] { display: none; }
+.foot .muted { flex: 1; }
+.foot-close {
+  flex: 0 0 auto;
+  width: 22px; height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 15px; line-height: 1;
+  cursor: pointer;
+}
+.foot-close:hover { background: var(--panel-2); color: var(--ink); }
 
 /* ---------- layout primitives ---------- */
 

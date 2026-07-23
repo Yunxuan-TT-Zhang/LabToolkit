@@ -2685,6 +2685,15 @@ $('#menuBtn').addEventListener('click', () => {
 });
 $('#scrim').addEventListener('click', closeSidebar);
 
+// Dismissible footer disclaimer — hidden once, remembered per device.
+const foot = $('#foot');
+if (foot && store['foot.dismissed']) foot.hidden = true;
+$('#footClose')?.addEventListener('click', () => {
+  if (foot) foot.hidden = true;
+  store['foot.dismissed'] = true;
+  writeStore();
+});
+
 window.addEventListener('hashchange', () => go(location.hash.slice(1)));
 
 /* ---------- installable app (PWA) ---------- */
