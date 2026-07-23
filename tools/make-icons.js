@@ -1,10 +1,10 @@
-/* Generates LabToolkit's PNG app icons from the "TLT" smiley logo, with no image
+/* Generates TheLabToolkit's PNG app icons from the two-bracket logo, with no image
    dependencies — a hand-rolled truecolor PNG encoder plus a supersampled rasteriser.
    Run: node tools/make-icons.js
-   The logo is drawn in white on the brand green; the OS masks/rounds the square itself.
+   The logo is drawn in white on the brand blue; the OS masks/rounds the square itself.
 
-   Logo geometry lives in a 720 x 620 space and matches the inline SVG in index.html:
-   two T's (eyes), an L (nose) and a smile. */
+   Logo geometry lives in a 471 x 368 space and matches the inline SVG in index.html:
+   two mirrored corner brackets. */
 
 const fs = require('fs');
 const path = require('path');
@@ -16,34 +16,18 @@ fs.mkdirSync(OUT, { recursive: true });
 const BG   = [93, 115, 137];    // #5d7389 brand dark blue
 const MARK = [247, 248, 247];   // near-white logo
 
-const STROKE = 30;              // matches the SVG stroke-width
-const LOGO_W = 720, LOGO_H = 620;
+const STROKE = 20;              // matches the SVG stroke-width
+const LOGO_W = 471, LOGO_H = 368;
 
-// Stroke segments as { x1, y1, x2, y2 } in logo space (round caps).
+// Stroke segments as { x1, y1, x2, y2 } in logo space — two mirrored corner brackets.
 const SEGMENTS = [
-  { x1: 22, y1: 24, x2: 278, y2: 24 },   // left T bar
-  { x1: 150, y1: 24, x2: 150, y2: 270 }, // left T stem
-  { x1: 442, y1: 24, x2: 698, y2: 24 },  // right T bar
-  { x1: 570, y1: 24, x2: 570, y2: 270 }, // right T stem
-  { x1: 300, y1: 205, x2: 300, y2: 385 },// L stem
-  { x1: 300, y1: 385, x2: 398, y2: 385 },// L foot
+  { x1: 8,   y1: 12, x2: 205, y2: 12 },  // left bar
+  { x1: 205, y1: 12, x2: 205, y2: 360 }, // left vertical
+  { x1: 463, y1: 12, x2: 266, y2: 12 },  // right bar
+  { x1: 266, y1: 12, x2: 266, y2: 360 }, // right vertical
 ];
-// Smile as a cubic Bézier, sampled to points that we treat as a poly-line.
-const SMILE = cubicPoints([64, 435], [200, 615], [520, 615], [656, 435], 40);
 
-function cubicPoints(p0, p1, p2, p3, n) {
-  const pts = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n, u = 1 - t;
-    pts.push([
-      u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0],
-      u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1],
-    ]);
-  }
-  return pts;
-}
-
-// Distance from a point to a segment (for round-capped stroke testing).
+// Distance from a point to a segment (for stroke testing).
 function distToSeg(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1;
   const len2 = dx*dx + dy*dy || 1;
@@ -57,9 +41,6 @@ function distToSeg(px, py, x1, y1, x2, y2) {
 function inMark(lx, ly) {
   const r = STROKE / 2;
   for (const s of SEGMENTS) if (distToSeg(lx, ly, s.x1, s.y1, s.x2, s.y2) <= r) return true;
-  for (let i = 0; i < SMILE.length - 1; i++) {
-    if (distToSeg(lx, ly, SMILE[i][0], SMILE[i][1], SMILE[i+1][0], SMILE[i+1][1]) <= r) return true;
-  }
   return false;
 }
 

@@ -1,4 +1,4 @@
-/* LabToolkit runtime configuration.
+/* TheLabToolkit runtime configuration.
  *
  * These switch on optional accounts + cross-device sync. Leaving them blank runs the app in
  * fully local, no-account mode (the calculators and local saving work either way). See

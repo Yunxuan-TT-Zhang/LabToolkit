@@ -1,4 +1,4 @@
-/* LabToolkit — bench calculator suite. All computation is client-side. */
+/* TheLabToolkit — bench calculator suite. All computation is client-side. */
 
 /* ============================================================
    Small helpers
@@ -2077,7 +2077,7 @@ TOOLS.import = {
   group: 'Recipes',
   name: 'Buffer from image / text',
   title: 'Buffer from image or text',
-  blurb: 'Paste a buffer description — or photograph one — and LabToolkit turns it into a weigh-out protocol. Recognised reagents are matched to a molecular-weight table; edit anything it gets wrong. Images are read on your device and never uploaded.',
+  blurb: 'Paste a buffer description — or photograph one — and TheLabToolkit turns it into a weigh-out protocol. Recognised reagents are matched to a molecular-weight table; edit anything it gets wrong. Images are read on your device and never uploaded.',
   render() {
     return `
       ${panel('Source', `
@@ -2386,7 +2386,7 @@ TOOLS.library = {
           const items = getLibrary();
           for (const it of data) if (it && it.kind) { it.id = uid(); if (!it.createdAt) it.createdAt = Date.now(); items.push(it); }
           setLibrary(items); renderList(); renderDetail();
-        } catch { alert('That file is not a LabToolkit library export.'); }
+        } catch { alert('That file is not a TheLabToolkit library export.'); }
       };
       r.readAsText(f); e.target.value = '';
     });
@@ -2546,7 +2546,7 @@ function acctSignedOut(box) {
       </div>
       <div class="muted tiny" id="acMsg" style="margin-top:10px"></div>
     `)}
-    ${panel('', `<div class="muted tiny">You don’t need an account to use LabToolkit — the calculators and local saving work without one. Signing in syncs your saved recipes, protocols and plate layouts across your devices. Synced items are stored on our server, private to your account (but not end-to-end encrypted) — see About &amp; privacy.</div>`)}`;
+    ${panel('', `<div class="muted tiny">You don’t need an account to use TheLabToolkit — the calculators and local saving work without one. Signing in syncs your saved recipes, protocols and plate layouts across your devices. Synced items are stored on our server, private to your account (but not end-to-end encrypted) — see About &amp; privacy.</div>`)}`;
   const msg = (t) => { const m = $('#acMsg', box); if (m) m.textContent = t; };
   const email = () => $('#acEmail', box).value.trim();
   const pw = () => $('#acPw', box).value;
@@ -2602,7 +2602,7 @@ function acctSignedIn(box) {
   bindSignOut(box);
   $('#acSyncNow', box).addEventListener('click', () => fullSync());
   $('#acExport', box).addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify({ app: 'LabToolkit', exportedAt: new Date().toISOString(), items: getLibrary() }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ app: 'TheLabToolkit', exportedAt: new Date().toISOString(), items: getLibrary() }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'labtoolkit-my-data.json'; a.click(); URL.revokeObjectURL(a.href);
   });
   $('#acDelete', box).addEventListener('click', async () => {
@@ -2685,7 +2685,7 @@ TOOLS.about = {
   system: true,
   name: 'About & privacy',
   title: 'About, privacy & your data',
-  blurb: 'What LabToolkit does with what you type — and the controls to take your data with you or wipe it.',
+  blurb: 'What TheLabToolkit does with what you type — and the controls to take your data with you or wipe it.',
   render() {
     return `
       ${panel('How your data is handled', `
@@ -2714,13 +2714,13 @@ TOOLS.about = {
           from this browser — this cannot be undone.
         </div>
       `)}
-      ${panel('', `<div class="muted tiny">LabToolkit performs standard textbook calculations and makes no claim
+      ${panel('', `<div class="muted tiny">TheLabToolkit performs standard textbook calculations and makes no claim
         about any specific assay, reagent or protocol. Always check values against your own records.</div>`)}
     `;
   },
   mount(root) {
     $('#aboutExport', root).addEventListener('click', () => {
-      const dump = { app: 'LabToolkit', exportedAt: new Date().toISOString(), data: {} };
+      const dump = { app: 'TheLabToolkit', exportedAt: new Date().toISOString(), data: {} };
       try { for (const k in localStorage) dump.data[k] = localStorage.getItem(k); } catch {}
       const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
@@ -2728,7 +2728,7 @@ TOOLS.about = {
       URL.revokeObjectURL(a.href);
     });
     $('#aboutWipe', root).addEventListener('click', () => {
-      if (!confirm('Delete every LabToolkit recipe, protocol and setting stored in this browser? This cannot be undone.')) return;
+      if (!confirm('Delete every TheLabToolkit recipe, protocol and setting stored in this browser? This cannot be undone.')) return;
       try { localStorage.removeItem(STORE_KEY); } catch {}
       store = {};
       $('#aboutMsg', root).textContent = 'All local data deleted. Reloading…';
@@ -2985,7 +2985,7 @@ window.addEventListener('appinstalled', () => {
   const banner = $('#installBanner'); if (banner) banner.hidden = true;
 });
 
-/* First-visit teaching banner: shows new visitors how to add LabToolkit to their home
+/* First-visit teaching banner: shows new visitors how to add TheLabToolkit to their home
    screen. Appears once (until dismissed or installed), only when not already running as an
    installed app, and is tailored to the platform. */
 const IOS_SHARE = '<span class="ib-share" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M12 3l-4 4M12 3l4 4"/><path d="M6 11H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1"/></svg></span>';
@@ -2996,11 +2996,11 @@ function maybeShowInstallBanner() {
 
   let msg;
   if (isIOS) {
-    msg = `<b>Add LabToolkit to your Home Screen.</b> In Safari, tap Share ${IOS_SHARE} then “Add to Home Screen”.`;
+    msg = `<b>Add TheLabToolkit to your Home Screen.</b> In Safari, tap Share ${IOS_SHARE} then “Add to Home Screen”.`;
   } else if (deferredPrompt) {
-    msg = `<b>Install LabToolkit</b> as an app — works offline, opens full-screen.`;
+    msg = `<b>Install TheLabToolkit</b> as an app — works offline, opens full-screen.`;
   } else if (/android/i.test(navigator.userAgent)) {
-    msg = `<b>Add LabToolkit to your Home Screen.</b> In Chrome, open the ⋮ menu then “Add to Home screen”.`;
+    msg = `<b>Add TheLabToolkit to your Home Screen.</b> In Chrome, open the ⋮ menu then “Add to Home screen”.`;
   } else {
     return; // desktop without an install prompt — don't nag
   }
@@ -3031,14 +3031,14 @@ if (installBtn) {
       deferredPrompt = null;
       installBtn.hidden = true;
     } else if (isIOS) {
-      alert('Add LabToolkit to your iPhone or iPad:\n\n'
+      alert('Add TheLabToolkit to your iPhone or iPad:\n\n'
         + '1. Make sure you are in Safari (Chrome cannot install on iPhone)\n'
         + '2. Tap the Share button — the square with an up-arrow at the bottom\n'
         + '3. Scroll down and tap "Add to Home Screen"\n'
         + '4. Tap "Add"\n\n'
-        + 'LabToolkit then appears as an icon on your home screen.');
+        + 'TheLabToolkit then appears as an icon on your home screen.');
     } else {
-      alert('Install LabToolkit on your device:\n\n'
+      alert('Install TheLabToolkit on your device:\n\n'
         + '• Android (Chrome): ⋮ menu → Add to Home screen / Install app\n'
         + '• Desktop (Chrome / Edge): the install icon at the right of the address bar\n'
         + '• iPhone / iPad: open this page in Safari, then Share → Add to Home Screen\n\n'

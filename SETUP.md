@@ -1,6 +1,6 @@
-# LabToolkit — accounts & sync setup
+# TheLabToolkit — accounts & sync setup
 
-LabToolkit works fully **without** any of this: the calculators run in the browser and
+TheLabToolkit works fully **without** any of this: the calculators run in the browser and
 saved recipes/protocols live in `localStorage`. Accounts add **optional** cross-device sync.
 This document is how you turn that on.
 
