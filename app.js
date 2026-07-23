@@ -1603,9 +1603,9 @@ TOOLS.ph = {
 
 TOOLS.plate = {
   group: 'Bench',
-  name: 'Plate layout',
-  title: 'Plate layout designer',
-  blurb: 'Paint conditions onto a 96- or 384-well plate, then export the map as CSV for your plate reader or notebook.',
+  name: '96-well plate layout',
+  title: '96-well plate layout',
+  blurb: 'Paint conditions onto a 96- or 384-well plate, save the layout to your library, and export the map as CSV for your plate reader or notebook.',
   render() {
     return `
       ${panel('Plate', `
@@ -1632,6 +1632,14 @@ TOOLS.plate = {
       `)}
       ${panel('Layout', `<div class="plate-scroll" id="plateWrap"></div><div class="legend" id="legend"></div>`)}
       <div id="out"></div>
+      ${panel('Save', `
+        <div class="grid g3">
+          <div class="field"><label for="f-platetitle">Layout name</label>
+            <input id="f-platetitle" data-k="platetitle" type="text" placeholder="e.g. Cytotoxicity screen — plate 1"></div>
+          <div class="field"><label>&nbsp;</label><button class="primary-btn" id="plateSave" type="button">Save to My Library</button></div>
+          <div class="field"><label>&nbsp;</label><div class="muted tiny" id="plateSaveMsg" style="padding-top:9px"></div></div>
+        </div>
+      `)}
     `;
   },
   mount(root) {
@@ -1800,6 +1808,18 @@ TOOLS.plate = {
     $('#clearPlate', root).addEventListener('click', () => { map = {}; persist(); drawPlate(); renderSummary(); });
     $('#exportCsv', root).addEventListener('click', exportCsv);
     $('#f-fmt', root).addEventListener('change', () => { drawPlate(); renderSummary(); });
+
+    $('#plateSave', root).addEventListener('click', () => {
+      const title = ($('#f-platetitle', root).value || 'Untitled plate').trim();
+      addLibraryItem({
+        kind: 'plate', title,
+        format: $('#f-fmt', root).value,
+        conds: JSON.parse(JSON.stringify(conds)),
+        map: { ...map },
+      });
+      const m = $('#plateSaveMsg', root);
+      if (m) { m.textContent = 'Saved to My Library.'; setTimeout(() => { m.textContent = ''; }, 1800); }
+    });
 
     renderConds(); drawPlate(); renderLegend(); renderSummary();
     this._redraw = () => { drawPlate(); renderSummary(); };
@@ -2203,7 +2223,7 @@ TOOLS.library = {
         return;
       }
       list.innerHTML = items.map(it => `<button class="lib-card ${it.id === self._sel ? 'on' : ''}" data-id="${esc(it.id)}" type="button">
-        <span class="lib-badge">${it.kind === 'recipe' ? 'Recipe' : 'Protocol'}</span>
+        <span class="lib-badge">${({ recipe: 'Recipe', protocol: 'Protocol', plate: 'Plate' })[it.kind] || 'Item'}</span>
         <span class="lib-title">${esc(it.title || 'Untitled')}</span>
         <span class="lib-date">${esc(fmtDate(it.createdAt))}</span>
       </button>`).join('');
@@ -2214,7 +2234,9 @@ TOOLS.library = {
       const det = $('#libDetail', root);
       const it = getLibrary().find(x => x.id === self._sel);
       if (!it) { det.innerHTML = `<div class="panel muted">Select an item to view it, or create one on the left.</div>`; return; }
-      if (it.kind === 'recipe') recipeDetail(det, it); else protocolDetail(det, it);
+      if (it.kind === 'recipe') recipeDetail(det, it);
+      else if (it.kind === 'plate') plateDetail(det, it);
+      else protocolDetail(det, it);
     }
 
     function recipeDetail(det, it) {
@@ -2266,6 +2288,39 @@ TOOLS.library = {
       $('#protoTitle', det).addEventListener('input', saveNow);
       $('#protoBody', det).addEventListener('input', saveNow);
       $('#delItem', det).addEventListener('click', () => { if (confirm('Delete this protocol?')) { deleteLibraryItem(it.id); self._sel = null; renderList(); renderDetail(); } });
+    }
+
+    function plateDetail(det, it) {
+      const [rows, cols] = ({ 96: [8, 12], 384: [16, 24], 24: [4, 6], 6: [2, 3] })[it.format] || [8, 12];
+      const map = it.map || {};
+      const conds = it.conds || [];
+      const counts = conds.map(() => 0);
+      Object.values(map).forEach(i => { if (counts[i] !== undefined) counts[i]++; });
+      const used = Object.keys(map).length;
+
+      det.innerHTML = `
+        ${panel('', `<div class="row-between">
+          <div><div class="panel-title" style="margin:0">Plate layout</div><div style="font-size:18px;font-weight:600;margin-top:2px">${esc(it.title || 'Untitled')}</div></div>
+          <div class="chip-row"><button class="ghost-btn" id="loadPlate" type="button">Edit in designer</button><button class="ghost-btn" id="delItem" type="button">Delete</button></div>
+        </div>`)}
+        ${panel('Summary', readout([
+          ['Format', `${esc(it.format)}-well`],
+          ['Conditions', String(conds.length)],
+          ['Wells used', `${used} / ${rows * cols}`],
+          ['Empty', String(rows * cols - used)],
+        ]))}
+        ${panel('Conditions', conds.length
+          ? `<div class="legend">${conds.map((c, i) => `<div class="item"><span class="sw" style="background:${esc(c.color)}"></span>${esc(c.name || 'Untitled')} · ${counts[i]} well${counts[i] === 1 ? '' : 's'}</div>`).join('')}</div>`
+          : `<div class="muted">No conditions.</div>`)}`;
+
+      $('#loadPlate', det).addEventListener('click', () => {
+        store['plate.conds'] = JSON.parse(JSON.stringify(conds));
+        store['plate.map'] = { ...map };
+        store['plate.fmt'] = it.format;
+        writeStore();
+        go('plate');
+      });
+      $('#delItem', det).addEventListener('click', () => { if (confirm('Delete this plate layout?')) { deleteLibraryItem(it.id); self._sel = null; renderList(); renderDetail(); } });
     }
 
     $('#addProto', root).addEventListener('click', () => {
@@ -2656,8 +2711,50 @@ window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
   if (installBtn) installBtn.hidden = false;
+  maybeShowInstallBanner();
 });
-window.addEventListener('appinstalled', () => { if (installBtn) installBtn.hidden = true; });
+window.addEventListener('appinstalled', () => {
+  if (installBtn) installBtn.hidden = true;
+  const banner = $('#installBanner'); if (banner) banner.hidden = true;
+});
+
+/* First-visit teaching banner: shows new visitors how to add LabToolkit to their home
+   screen. Appears once (until dismissed or installed), only when not already running as an
+   installed app, and is tailored to the platform. */
+const IOS_SHARE = '<span class="ib-share" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M12 3l-4 4M12 3l4 4"/><path d="M6 11H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1"/></svg></span>';
+
+function maybeShowInstallBanner() {
+  const banner = $('#installBanner');
+  if (!banner || isStandalone || store['install.dismissed']) return;
+
+  let msg;
+  if (isIOS) {
+    msg = `<b>Add LabToolkit to your Home Screen.</b> In Safari, tap Share ${IOS_SHARE} then “Add to Home Screen”.`;
+  } else if (deferredPrompt) {
+    msg = `<b>Install LabToolkit</b> as an app — works offline, opens full-screen.`;
+  } else if (/android/i.test(navigator.userAgent)) {
+    msg = `<b>Add LabToolkit to your Home Screen.</b> In Chrome, open the ⋮ menu then “Add to Home screen”.`;
+  } else {
+    return; // desktop without an install prompt — don't nag
+  }
+
+  $('.ib-text', banner).innerHTML = msg;
+  const action = $('#ibAction', banner);
+  action.hidden = !deferredPrompt;
+  banner.hidden = false;
+}
+
+$('#ibDismiss')?.addEventListener('click', () => {
+  const banner = $('#installBanner'); if (banner) banner.hidden = true;
+  store['install.dismissed'] = true; writeStore();
+});
+$('#ibAction')?.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  const banner = $('#installBanner'); if (banner) banner.hidden = true;
+});
 
 if (installBtn) {
   installBtn.addEventListener('click', async () => {
@@ -2684,3 +2781,6 @@ if (installBtn) {
 }
 
 go(location.hash.slice(1) || store['labtoolkit.last'] || 'molarity');
+
+// iOS/Android fire no install event, so try to show the teaching banner on first paint too.
+maybeShowInstallBanner();

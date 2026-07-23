@@ -100,6 +100,7 @@ eq('far-from-pKa warning', $('.note').textContent, /Buffering capacity is poor/)
 
 console.log('\n=== plate ===');
 nav('plate');
+eq('renamed to 96-well plate layout', $('#topbarTitle').textContent, '96-well plate layout');
 eq('96 wells drawn', doc.querySelectorAll('[data-well]').length, 96);
 $('#autoFill').click();
 eq('autofill assigned wells', doc.querySelectorAll('[data-well]').length, 96);
@@ -161,6 +162,22 @@ window.confirm = () => true;
 doc.querySelectorAll('#libList .lib-card').forEach(c => { if (/Test recipe/.test(c.textContent)) c.click(); });
 $('#delItem').click();
 eq('one item left after delete', doc.querySelectorAll('#libList .lib-card').length, 1);
+
+console.log('\n=== save plate layout to library ===');
+nav('plate');
+$('#f-fmt').value='96'; $('#f-fmt').dispatchEvent(new window.Event('change',{bubbles:true}));
+$('#autoFill').click();
+set('#f-platetitle','Screen plate A');
+$('#plateSave').click();
+eq('plate save confirms', $('#plateSaveMsg').textContent, /Saved/);
+nav('library');
+const plateCard = Array.from(doc.querySelectorAll('#libList .lib-card')).find(c => /Screen plate A/.test(c.textContent));
+eq('plate layout appears in library with a Plate badge', plateCard && /Plate/.test(plateCard.textContent), true);
+plateCard.click();
+eq('plate detail shows the format', $('#libDetail').textContent, /96-well/);
+$('#loadPlate').click();
+eq('Edit-in-designer returns to the plate tool', $('#topbarTitle').textContent, '96-well plate layout');
+eq('loaded plate restored painted wells', doc.querySelectorAll('.well').length, 96);
 
 console.log('\n=== customize toolkit ===');
 nav('settings');

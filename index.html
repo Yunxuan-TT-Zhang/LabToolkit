@@ -6,7 +6,8 @@
 <title>LabToolkit — lab calculators that don't waste your time</title>
 <meta name="description" content="A fast, clean suite of bench calculators: molarity, dilutions, A280, buffers, plate layouts, primer Tm.">
 <link rel="stylesheet" href="styles.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="icon" type="image/png" href="icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 
 <!-- Installable web app (PWA). The service worker only registers when the page is
      served over http(s); opening index.html directly as a file still works, just without
@@ -25,7 +26,14 @@
 <div class="app">
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <div class="brand-mark">LT</div>
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 720 620" fill="none" stroke="currentColor" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 24 H278 M150 24 V270"/>
+          <path d="M442 24 H698 M570 24 V270"/>
+          <path d="M300 205 V385 M300 385 H398"/>
+          <path d="M64 435 C 200 615, 520 615, 656 435"/>
+        </svg>
+      </div>
       <div>
         <div class="brand-name">LabToolkit</div>
         <div class="brand-sub">bench calculators</div>
@@ -62,6 +70,16 @@
 </div>
 
 <div class="scrim" id="scrim"></div>
+
+<!-- First-visit prompt teaching how to install to the home screen. Shown by app.js only
+     when not already installed and not previously dismissed. -->
+<div class="install-banner" id="installBanner" hidden>
+  <div class="ib-text"></div>
+  <div class="ib-actions">
+    <button class="primary-btn" id="ibAction" type="button" hidden>Install</button>
+    <button class="ghost-btn" id="ibDismiss" type="button">Got it</button>
+  </div>
+</div>
 
 <script src="config.js"></script>
 <script src="app.js"></script>
