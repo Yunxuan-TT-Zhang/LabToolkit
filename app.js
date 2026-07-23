@@ -2300,9 +2300,127 @@ TOOLS.library = {
   compute() { /* self-managed */ },
 };
 
+/* ---------- Customize toolkit (system) ---------- */
+
+TOOLS.settings = {
+  group: 'Settings',
+  system: true,
+  name: 'Customize toolkit',
+  title: 'Customize your toolkit',
+  blurb: 'Choose which calculators appear in the sidebar and the order they show in. Hidden tools are only removed from the menu — nothing is deleted, and you can bring them back any time. Saved on this device.',
+  render() {
+    return `<div id="custList"></div>
+      ${panel('', `<div class="chip-row"><button class="ghost-btn" id="custReset" type="button">Reset to default</button></div>`)}`;
+  },
+  mount(root) {
+    const self = this;
+    const listEl = $('#custList', root);
+
+    function draw() {
+      const order = toolOrder();
+      const groups = {};
+      for (const id of order) (groups[TOOLS[id].group] ||= []).push(id);
+
+      listEl.innerHTML = Object.entries(groups).map(([g, ids]) => panel(g,
+        ids.map((id, i) => {
+          const t = TOOLS[id];
+          const hidden = isToolHidden(id);
+          return `<div class="cust-row">
+            <label class="cust-toggle">
+              <input type="checkbox" data-show="${esc(id)}" ${hidden ? '' : 'checked'}>
+              <span class="${hidden ? 'muted' : ''}">${esc(t.name)}</span>
+            </label>
+            <div class="chip-row">
+              <button class="ghost-btn cust-move" data-up="${esc(id)}" type="button" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+              <button class="ghost-btn cust-move" data-down="${esc(id)}" type="button" ${i === ids.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+            </div>
+          </div>`;
+        }).join('')
+      )).join('');
+
+      $$('[data-show]', listEl).forEach(cb => cb.addEventListener('change', () => {
+        setToolHidden(cb.dataset.show, !cb.checked);
+        buildNav(); draw();
+      }));
+      $$('[data-up]', listEl).forEach(b => b.addEventListener('click', () => { moveTool(b.dataset.up, -1); buildNav(); draw(); }));
+      $$('[data-down]', listEl).forEach(b => b.addEventListener('click', () => { moveTool(b.dataset.down, 1); buildNav(); draw(); }));
+    }
+
+    $('#custReset', root).addEventListener('click', () => {
+      delete store['nav.hidden']; delete store['nav.order'];
+      writeStore(); buildNav(); draw();
+    });
+
+    draw();
+  },
+  compute() {},
+};
+
+/* ---------- About & privacy (system) ---------- */
+
+TOOLS.about = {
+  group: 'Settings',
+  system: true,
+  name: 'About & privacy',
+  title: 'About, privacy & your data',
+  blurb: 'What LabToolkit does with what you type — and the controls to take your data with you or wipe it.',
+  render() {
+    return `
+      ${panel('How your data is handled', `
+        <div class="stack">
+          <p style="margin:0">The <b>calculators run entirely in your browser</b>. Numbers you type into a
+          calculator are never sent anywhere.</p>
+          <p style="margin:0">Your <b>saved recipes and protocols</b> are stored on this device.
+          ${SYNC_ENABLED
+            ? `When you are signed in they also sync to your account — <b>encrypted on your device first</b>,
+               so we only ever hold data we cannot read.`
+            : `Account sign-in and cross-device sync are coming; until then nothing you save leaves this device.`}</p>
+          <p style="margin:0">Photographs you scan are read on your device (in-browser OCR). The image is
+          not uploaded.</p>
+        </div>
+      `)}
+      ${panel('Your data controls', `
+        <div class="chip-row">
+          <button class="primary-btn" id="aboutExport" type="button">Export my data</button>
+          <button class="ghost-btn" id="aboutWipe" type="button">Delete all data on this device</button>
+        </div>
+        <div class="muted tiny" id="aboutMsg" style="margin-top:10px">
+          Export downloads everything saved on this device as a JSON file. Delete removes it permanently
+          from this browser — this cannot be undone.
+        </div>
+      `)}
+      ${panel('', `<div class="muted tiny">LabToolkit performs standard textbook calculations and makes no claim
+        about any specific assay, reagent or protocol. Always check values against your own records.</div>`)}
+    `;
+  },
+  mount(root) {
+    $('#aboutExport', root).addEventListener('click', () => {
+      const dump = { app: 'LabToolkit', exportedAt: new Date().toISOString(), data: {} };
+      try { for (const k in localStorage) dump.data[k] = localStorage.getItem(k); } catch {}
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'labtoolkit-data-export.json'; a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    $('#aboutWipe', root).addEventListener('click', () => {
+      if (!confirm('Delete every LabToolkit recipe, protocol and setting stored in this browser? This cannot be undone.')) return;
+      try { localStorage.removeItem(STORE_KEY); } catch {}
+      store = {};
+      $('#aboutMsg', root).textContent = 'All local data deleted. Reloading…';
+      setTimeout(() => location.reload(), 700);
+    });
+  },
+  compute() {},
+};
+
 /* ============================================================
    Persistence
    ============================================================ */
+
+/* Set once a Supabase config is present (see config.js + SETUP.md). Until then the app
+   is fully functional in local-only mode and the messaging reflects that. */
+const SYNC_ENABLED = typeof window !== 'undefined'
+  && window.LABTOOLKIT_CONFIG && !!window.LABTOOLKIT_CONFIG.supabaseUrl;
 
 const STORE_KEY = 'labtoolkit.v1';
 let store = {};
@@ -2335,14 +2453,53 @@ function restore(root) {
 
 let current = 'molarity';
 
+/* ---------- customization state ---------- */
+
+// User-visible (non-system) tool ids, in the user's saved order, with any newly shipped
+// tools appended so an update never hides a new calculator.
+function toolOrder() {
+  const all = Object.keys(TOOLS).filter(id => !TOOLS[id].system);
+  const saved = Array.isArray(store['nav.order']) ? store['nav.order'] : [];
+  const known = saved.filter(id => TOOLS[id] && !TOOLS[id].system);
+  return [...known, ...all.filter(id => !known.includes(id))];
+}
+const isToolHidden = (id) => Array.isArray(store['nav.hidden']) && store['nav.hidden'].includes(id);
+function setToolHidden(id, hidden) {
+  const set = new Set(Array.isArray(store['nav.hidden']) ? store['nav.hidden'] : []);
+  if (hidden) set.add(id); else set.delete(id);
+  store['nav.hidden'] = [...set];
+  writeStore();
+}
+// Swap a tool with its nearest neighbour in the same group.
+function moveTool(id, dir) {
+  const order = toolOrder();
+  const idx = order.indexOf(id);
+  if (idx < 0) return;
+  const group = TOOLS[id].group;
+  let j = idx + dir;
+  while (j >= 0 && j < order.length && TOOLS[order[j]].group !== group) j += dir;
+  if (j < 0 || j >= order.length) return;
+  [order[idx], order[j]] = [order[j], order[idx]];
+  store['nav.order'] = order;
+  writeStore();
+}
+
 function buildNav() {
   const groups = {};
-  for (const [id, t] of Object.entries(TOOLS)) (groups[t.group] ||= []).push([id, t]);
+  for (const id of toolOrder()) {
+    if (isToolHidden(id)) continue;
+    (groups[TOOLS[id].group] ||= []).push([id, TOOLS[id]]);
+  }
 
-  $('#nav').innerHTML = Object.entries(groups).map(([g, items]) => `
+  const groupHTML = ([g, items]) => `
     <div class="nav-group">${esc(g)}</div>
-    ${items.map(([id, t]) => `<button class="nav-item" data-tool="${id}" type="button">${esc(t.name)}</button>`).join('')}
-  `).join('');
+    ${items.map(([id, t]) => `<button class="nav-item" data-tool="${id}" type="button">${esc(t.name)}</button>`).join('')}`;
+
+  // System tools (Customize, About) always appear, pinned to the bottom.
+  const systemItems = Object.entries(TOOLS).filter(([, t]) => t.system);
+
+  $('#nav').innerHTML = Object.entries(groups).map(groupHTML).join('')
+    + groupHTML(['Settings', systemItems]);
 
   $$('#nav .nav-item').forEach(b =>
     b.addEventListener('click', () => { go(b.dataset.tool); closeSidebar(); }));
@@ -2482,10 +2639,18 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 
-// Chromium fires beforeinstallprompt; capture it and reveal the Install button.
-// Safari/iOS never fires it, so the button falls back to printed instructions.
+// Chromium fires beforeinstallprompt, which lets the button trigger a native install.
+// Safari/iOS never fires it, so the button shows step-by-step instructions instead.
 let deferredPrompt = null;
 const installBtn = $('#installBtn');
+
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS masquerades as Mac
+const isStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+// Show the button whenever we're not already installed — every platform can install
+// *somehow*, and the click handler explains how for those without a native prompt.
+if (installBtn && !isStandalone) installBtn.hidden = false;
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -2501,12 +2666,19 @@ if (installBtn) {
       await deferredPrompt.userChoice;
       deferredPrompt = null;
       installBtn.hidden = true;
+    } else if (isIOS) {
+      alert('Add LabToolkit to your iPhone or iPad:\n\n'
+        + '1. Make sure you are in Safari (Chrome cannot install on iPhone)\n'
+        + '2. Tap the Share button — the square with an up-arrow at the bottom\n'
+        + '3. Scroll down and tap "Add to Home Screen"\n'
+        + '4. Tap "Add"\n\n'
+        + 'LabToolkit then appears as an icon on your home screen.');
     } else {
       alert('Install LabToolkit on your device:\n\n'
-        + '• iPhone / iPad (Safari): Share → Add to Home Screen\n'
-        + '• Android (Chrome): ⋮ menu → Install app\n'
-        + '• Desktop (Chrome / Edge): the install icon at the right of the address bar\n\n'
-        + 'This requires the app to be opened from a web address (https), not a downloaded file.');
+        + '• Android (Chrome): ⋮ menu → Add to Home screen / Install app\n'
+        + '• Desktop (Chrome / Edge): the install icon at the right of the address bar\n'
+        + '• iPhone / iPad: open this page in Safari, then Share → Add to Home Screen\n\n'
+        + 'The page must be opened from its web address (https), not a downloaded file.');
     }
   });
 }

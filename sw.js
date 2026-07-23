@@ -1,13 +1,14 @@
 /* LabToolkit service worker — precache the app shell so it works offline and installs
    as a standalone app. Bump CACHE whenever the shipped files change. */
 
-const CACHE = 'labtoolkit-v2';
+const CACHE = 'labtoolkit-v3';
 
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './config.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

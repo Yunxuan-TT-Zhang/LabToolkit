@@ -433,6 +433,30 @@ td.num { font-family: var(--mono); font-size: 12.5px; }
   .lib-layout { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* ---------- customize toolkit ---------- */
+
+.cust-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+.cust-row:last-child { border-bottom: 0; }
+
+.cust-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.cust-toggle input { width: auto; margin: 0; }
+
+.cust-move { padding: 3px 9px; line-height: 1; }
+.cust-move:disabled { opacity: .35; cursor: default; }
+
 /* ---------- misc ---------- */
 
 .muted { color: var(--muted); }

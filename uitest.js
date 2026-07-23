@@ -5,6 +5,9 @@ const {window}=dom;
 window.matchMedia = () => ({matches:false, addEventListener(){}});
 // jsdom has no clipboard by default
 window.navigator.clipboard = { writeText: () => Promise.resolve() };
+// jsdom stubs for the download path
+window.URL.createObjectURL = () => 'blob:stub';
+window.URL.revokeObjectURL = () => {};
 window.eval(fs.readFileSync('app.js','utf8'));
 const doc=window.document;
 
@@ -19,8 +22,9 @@ const nav=(tool)=>{ doc.querySelector(`[data-tool="${tool}"]`).click(); };
 const main=()=>$('.result-main')?$('.result-main').textContent.trim():'(no result)';
 
 console.log('=== boot ===');
-eq('nav rendered', doc.querySelectorAll('#nav .nav-item').length, 15);
+eq('nav rendered (15 tools + 2 system)', doc.querySelectorAll('#nav .nav-item').length, 17);
 eq('default tool is molarity', $('#topbarTitle').textContent, 'Molarity & mass');
+eq('customize + about pinned in nav', !!$('[data-tool="settings"]') && !!$('[data-tool="about"]'), true);
 
 console.log('\n=== molarity ===');
 // 58.44 g/mol NaCl, 5 M, 100 mL  -> 29.22 g
@@ -157,6 +161,36 @@ window.confirm = () => true;
 doc.querySelectorAll('#libList .lib-card').forEach(c => { if (/Test recipe/.test(c.textContent)) c.click(); });
 $('#delItem').click();
 eq('one item left after delete', doc.querySelectorAll('#libList .lib-card').length, 1);
+
+console.log('\n=== customize toolkit ===');
+nav('settings');
+eq('customizer lists every tool with a toggle', doc.querySelectorAll('#custList [data-show]').length, 15);
+// hide the unit converter
+const unitToggle = doc.querySelector('#custList [data-show="units"]');
+unitToggle.checked = false; unitToggle.dispatchEvent(new window.Event('change',{bubbles:true}));
+eq('hidden tool disappears from the sidebar', !!$('[data-tool="units"]'), false);
+eq('hidden state persisted', (JSON.parse(window.localStorage.getItem('labtoolkit.v1'))['nav.hidden']||[]).includes('units'), true);
+// re-show it
+const unitToggle2 = doc.querySelector('#custList [data-show="units"]');
+unitToggle2.checked = true; unitToggle2.dispatchEvent(new window.Event('change',{bubbles:true}));
+eq('re-enabled tool returns to the sidebar', !!$('[data-tool="units"]'), true);
+// reorder: move the 2nd Solutions tool up, check the order array changed
+const orderBefore = JSON.parse(window.localStorage.getItem('labtoolkit.v1'))['nav.order'];
+doc.querySelector('#custList [data-down="molarity"]').click();
+const orderAfter = JSON.parse(window.localStorage.getItem('labtoolkit.v1'))['nav.order'];
+eq('reorder writes a new order', JSON.stringify(orderBefore) !== JSON.stringify(orderAfter), true);
+eq('molarity moved down past dilution', orderAfter.indexOf('molarity') > orderAfter.indexOf('dilution'), true);
+// reset
+$('#custReset').click();
+eq('reset clears customization', window.localStorage.getItem('labtoolkit.v1').includes('nav.order'), false);
+
+console.log('\n=== about & privacy / data controls ===');
+nav('about');
+eq('honest messaging present (no absolute "nothing uploaded")', $('#content').textContent, /run entirely in your browser/);
+eq('export button present', !!$('#aboutExport'), true);
+eq('delete button present', !!$('#aboutWipe'), true);
+let exportThrew=false; try { $('#aboutExport').click(); } catch(e){ exportThrew=true; }
+eq('export does not throw', exportThrew, false);
 
 console.log('\n=== copy + theme ===');
 nav('molarity');
