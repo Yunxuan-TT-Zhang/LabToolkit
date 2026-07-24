@@ -12,7 +12,7 @@ if (cut < 0) throw new Error('Could not find the TOOLS marker in app.js');
 
 const tmp = path.join(__dirname, '.core.test.js');
 fs.writeFileSync(tmp, src.slice(0, cut) +
-  'module.exports={fmt,showVol,showMass,showMolar,proteinStats,oligoStats,netCharge,cleanDNA,revComp,BUFFERS};');
+  'module.exports={fmt,showVol,showMass,showMolar,proteinStats,oligoStats,netCharge,cleanDNA,revComp,BUFFERS,exchangeResidual,roundsForTarget};');
 const C = require(tmp);
 process.on('exit', () => { try { fs.unlinkSync(tmp); } catch {} });
 
@@ -96,6 +96,28 @@ console.log('\n--- centrifugation ---');
   const K = 1.118e-6, rad = 87, rpm = 14000, rcf = K * rad * rpm * rpm;
   eq('14000 rpm at 87 mm', rcf, 19064, 0.001);
   eq('RCF -> rpm round trip', Math.sqrt(rcf / (K * rad)), rpm, 1e-9);
+}
+
+console.log('\n--- buffer exchange carryover ---');
+{
+  // Dialysis: 1 mL sample vs 1 L bath -> fraction per change = 1/1001
+  const f = 1 / 1001;
+  eq('dialysis residual after 1 change', C.exchangeResidual(f, 1), f, 1e-9);
+  eq('dialysis residual after 3 changes', C.exchangeResidual(f, 3), Math.pow(f, 3), 1e-9);
+  eq('3 changes ~10^9 fold', 1 / C.exchangeResidual(f, 3), 1.003e9, 0.01);
+  eq('changes needed for 1e6-fold', C.roundsForTarget(f, 1e6), 2);       // each change ~1001x
+  eq('changes needed for 1e9-fold', C.roundsForTarget(f, 1e9), 3);
+
+  // Spin concentrator: fill 15 mL, down to 0.5 mL -> fraction 1/30 per round
+  const fs = 0.5 / 15;
+  eq('spin residual after 3 rounds', C.exchangeResidual(fs, 3), Math.pow(fs, 3), 1e-9);
+  eq('spin rounds for 1000-fold', C.roundsForTarget(fs, 1000), 3);        // 30x per round
+  eq('spin rounds for 30-fold is 1', C.roundsForTarget(fs, 30), 1);
+
+  // guards
+  eq('zero rounds leaves everything', C.exchangeResidual(fs, 0), 1);
+  eq('fraction>=1 gives NaN rounds', Number.isNaN(C.roundsForTarget(1, 100)), true);
+  eq('target<=1 gives NaN rounds', Number.isNaN(C.roundsForTarget(fs, 1)), true);
 }
 
 console.log('\n--- unit scaling ---');

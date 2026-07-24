@@ -22,7 +22,7 @@ const nav=(tool)=>{ doc.querySelector(`[data-tool="${tool}"]`).click(); };
 const main=()=>$('.result-main')?$('.result-main').textContent.trim():'(no result)';
 
 console.log('=== boot ===');
-eq('nav rendered (15 tools + 3 system)', doc.querySelectorAll('#nav .nav-item').length, 18);
+eq('nav rendered (16 tools + 3 system)', doc.querySelectorAll('#nav .nav-item').length, 19);
 eq('default tool is molarity', $('#topbarTitle').textContent, 'Molarity & mass');
 eq('account + customize + about pinned in nav', !!$('[data-tool="account"]') && !!$('[data-tool="settings"]') && !!$('[data-tool="about"]'), true);
 
@@ -107,6 +107,27 @@ eq('autofill assigned wells', doc.querySelectorAll('[data-well]').length, 96);
 $('#f-fmt').value='384'; $('#f-fmt').dispatchEvent(new window.Event('change',{bubbles:true}));
 eq('384 wells drawn', doc.querySelectorAll('[data-well]').length, 384);
 
+console.log('\n=== buffer exchange ===');
+nav('exchange');
+eq('exchange tool renders', $('#topbarTitle').textContent, /buffer exchange/i);
+// dialysis: 1 mL vs 1 L, 3 changes -> ~10^9 fold, >99.9999999% removed
+set('#f-dsample','1'); $('[data-k="dsampleU"]').value='mL'; $('[data-k="dsampleU"]').dispatchEvent(new window.Event('change',{bubbles:true}));
+set('#f-dbath','1'); $('[data-k="dbathU"]').value='L'; $('[data-k="dbathU"]').dispatchEvent(new window.Event('change',{bubbles:true}));
+set('#f-dchanges','3');
+eq('dialysis 3x1L reduction shown', main(), /×\s*reduction/);
+eq('dialysis reduction ~1e9', main(), /1\.003e\+9/);
+// target recommendation
+set('#f-targetFold','1000000');
+eq('recommends changes for target', $('#out').textContent, /you need\s*2\s*buffer changes/);
+// switch to spin mode; spin panel visible, dialysis hidden
+$('#f-method').value='spin'; $('#f-method').dispatchEvent(new window.Event('change',{bubbles:true}));
+eq('spin panel shown in spin mode', $('#spinPanel').style.display, '');
+eq('dialysis panel hidden in spin mode', $('#dialPanel').style.display, 'none');
+set('#f-cfill','15'); $('[data-k="cfillU"]').value='mL'; $('[data-k="cfillU"]').dispatchEvent(new window.Event('change',{bubbles:true}));
+set('#f-cret','500'); $('[data-k="cretU"]').value='µL'; $('[data-k="cretU"]').dispatchEvent(new window.Event('change',{bubbles:true}));
+set('#f-crounds','3');
+eq('spin mode computes a reduction', main(), /×\s*reduction/);
+
 console.log('\n=== centrifuge ===');
 nav('spin');
 set('#f-rad',87); set('#f-rpm',14000);
@@ -181,7 +202,7 @@ eq('loaded plate restored painted wells', doc.querySelectorAll('.well').length, 
 
 console.log('\n=== customize toolkit ===');
 nav('settings');
-eq('customizer lists every tool with a toggle', doc.querySelectorAll('#custList [data-show]').length, 15);
+eq('customizer lists every tool with a toggle', doc.querySelectorAll('#custList [data-show]').length, 16);
 // hide the unit converter
 const unitToggle = doc.querySelector('#custList [data-show="units"]');
 unitToggle.checked = false; unitToggle.dispatchEvent(new window.Event('change',{bubbles:true}));

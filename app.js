@@ -608,6 +608,28 @@ function mergeItems(local, remote) {
 }
 
 /* ============================================================
+   Buffer-exchange carryover (pure — no DOM)
+   ============================================================ */
+
+/* Both methods remove a freely-diffusible component (e.g. salt, imidazole) by repeated
+   dilution, so the residual falls geometrically.
+   - Dialysis: at equilibrium the solute equalises across the membrane, so each change
+     leaves fraction  V_sample / (V_sample + V_bath).
+   - Spin concentrator: small molecules pass the membrane freely, so their concentration is
+     unchanged by concentrating — each dilute/spin round leaves fraction  V_final / V_fill.
+   `fractionPerRound` is that ratio; residual after n rounds is it raised to the n-th power. */
+function exchangeResidual(fractionPerRound, rounds) {
+  if (!(fractionPerRound > 0) || !(rounds >= 0)) return NaN;
+  return Math.pow(fractionPerRound, rounds);
+}
+
+/** Rounds needed to reduce the component by at least `targetFold`. */
+function roundsForTarget(fractionPerRound, targetFold) {
+  if (!(fractionPerRound > 0) || fractionPerRound >= 1 || !(targetFold > 1)) return NaN;
+  return Math.ceil(Math.log(targetFold) / Math.log(1 / fractionPerRound));
+}
+
+/* ============================================================
    Tools
    ============================================================ */
 
@@ -1627,6 +1649,137 @@ TOOLS.ph = {
       ${panel('Nearest alternatives', `<div class="table-scroll"><table>
         <thead><tr><th>System</th><th>pKa</th><th>Δ from target</th></tr></thead>
         <tbody>${alt}</tbody></table></div>`)}
+    `;
+  },
+};
+
+/* ---------- Buffer exchange (dialysis / concentrator) ---------- */
+
+TOOLS.exchange = {
+  group: 'Buffers',
+  name: 'Buffer exchange',
+  title: 'Dialysis & concentrator buffer exchange',
+  blurb: 'How much of the old buffer is left after dialysis or spin-concentrator exchange, and how many rounds you need to hit a target — plus practical guidance on spin speeds and times. The carryover maths are exact; the spin/time numbers are guidelines, so check your device.',
+  render() {
+    return `
+      ${panel('Method', `<div class="grid g2">
+        ${fieldSel('Exchange by', 'method', [['dialysis', 'Dialysis (against a buffer bath)'], ['spin', 'Spin concentrator (ultrafiltration)']], 'dialysis')}
+        ${fieldUnit('Component starting conc.', 'c0', MOLAR, 'mM', { hint: 'Optional — e.g. imidazole to remove' })}
+      </div>`)}
+
+      <div id="dialPanel">${panel('Dialysis', `
+        <div class="grid g3">
+          ${fieldUnit('Sample volume', 'dsample', VOL, 'mL')}
+          ${fieldUnit('Bath volume (each change)', 'dbath', VOL, 'L')}
+          ${fieldNum('Number of buffer changes', 'dchanges', { value: 3 })}
+        </div>
+        <div class="formula">residual per change = V_sample ÷ (V_sample + V_bath)   — the equilibrium limit</div>`)}</div>
+
+      <div id="spinPanel">${panel('Spin concentrator', `
+        <div class="grid g3">
+          ${fieldUnit('Fill volume (each round)', 'cfill', VOL, 'mL')}
+          ${fieldUnit('Concentrated down to', 'cret', VOL, 'µL')}
+          ${fieldNum('Dilute / spin rounds', 'crounds', { value: 3 })}
+        </div>
+        <div class="formula">residual per round = V_final ÷ V_fill   — salts pass the membrane freely</div>`)}</div>
+
+      ${panel('Target (optional)', `<div class="grid g2">
+        ${fieldNum('Reduce old buffer by (fold)', 'targetFold', { placeholder: 'e.g. 1000' })}
+        <div class="field"><label>&nbsp;</label><div class="muted tiny" style="padding-top:9px">We’ll tell you how many rounds that needs.</div></div>
+      </div>`)}
+
+      <div id="out"></div>
+
+      ${panel('Practical guidance (rules of thumb — verify with your device)', `
+        <div class="grid g2">
+          <div>
+            <div class="panel-title" style="margin-bottom:6px">Dialysis</div>
+            <ul class="muted tiny" style="margin:0;padding-left:16px;line-height:1.6">
+              <li>Use a bath ≥ 100× the sample per change; ≥ 3 changes gives &gt;10⁶-fold removal.</li>
+              <li>Let each change reach equilibrium: ~2–4 h at room temperature with stirring, roughly double that at 4 °C. Making one change an overnight is common.</li>
+              <li>Thinner samples, larger membrane area and stirring all speed equilibration; a single change can never beat the equilibrium limit above.</li>
+              <li>Pick an MWCO well below your protein (e.g. 3.5–10 kDa) so it’s retained while salts exchange.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="panel-title" style="margin-bottom:6px">Spin concentrator</div>
+            <ul class="muted tiny" style="margin:0;padding-left:16px;line-height:1.6">
+              <li>Choose an MWCO ~2–3× below your protein’s mass (e.g. 10 kDa for a 30 kDa protein).</li>
+              <li>Concentrating alone doesn’t remove salt — the dilute-and-respin rounds do.</li>
+              <li><b>Speed:</b> most 2–20 mL units are safe at <b>3,000–4,000 × g</b> in a swinging-bucket rotor; small 0.5 mL fixed-angle units go to ~14,000 × g. MWCO mainly sets spin <i>time</i>, not the maximum speed.</li>
+              <li>Always confirm the maximum g on the device insert — over-spinning can rupture the membrane and lose the sample. Don’t spin to complete dryness.</li>
+            </ul>
+          </div>
+        </div>`)}
+    `;
+  },
+  mount() {},
+  compute(root) {
+    const method = $('#f-method', root).value;
+    $('#dialPanel', root).style.display = method === 'dialysis' ? '' : 'none';
+    $('#spinPanel', root).style.display = method === 'spin' ? '' : 'none';
+
+    const c0 = ok(num($('#f-c0', root))) ? num($('#f-c0', root)) * MOLAR[$('[data-k="c0U"]', root).value] : NaN;
+    const out = $('#out', root);
+    const isDial = method === 'dialysis';
+
+    let f, rounds, retained, needMsg = '';
+    if (isDial) {
+      const vs = num($('#f-dsample', root)) * VOL[$('[data-k="dsampleU"]', root).value];
+      const vb = num($('#f-dbath', root)) * VOL[$('[data-k="dbathU"]', root).value];
+      rounds = Math.round(num($('#f-dchanges', root)));
+      if (!ok(vs) || !ok(vb) || vs <= 0 || vb <= 0 || !ok(rounds) || rounds < 0) {
+        out.innerHTML = `<div class="panel muted">Enter a sample volume, a bath volume and the number of changes.</div>`; return;
+      }
+      f = vs / (vs + vb);
+    } else {
+      const vf = num($('#f-cfill', root)) * VOL[$('[data-k="cfillU"]', root).value];
+      const vr = num($('#f-cret', root)) * VOL[$('[data-k="cretU"]', root).value];
+      rounds = Math.round(num($('#f-crounds', root)));
+      if (!ok(vf) || !ok(vr) || vf <= 0 || vr <= 0 || !ok(rounds) || rounds < 0) {
+        out.innerHTML = `<div class="panel muted">Enter a fill volume, a concentrated volume and the number of rounds.</div>`; return;
+      }
+      if (vr >= vf) { out.innerHTML = `<div class="note">The concentrated volume must be smaller than the fill volume, or no buffer is exchanged.</div>`; return; }
+      f = vr / vf;
+    }
+
+    const residual = exchangeResidual(f, rounds);
+    const fold = 1 / residual;
+    const removedPct = (1 - residual) * 100;
+    const perFold = 1 / f;
+
+    const targetFold = num($('#f-targetFold', root));
+    if (ok(targetFold) && targetFold > 1) {
+      const need = roundsForTarget(f, targetFold);
+      needMsg = `<div class="note">To reduce the old buffer <b>${fmt(targetFold)}×</b>, you need <b>${need}</b> ${isDial ? 'buffer change' + (need === 1 ? '' : 's') : 'dilute/spin round' + (need === 1 ? '' : 's')} at this ratio (${fmt(perFold, 4)}× per ${isDial ? 'change' : 'round'}).</div>`;
+    }
+
+    // per-round table
+    const rowsN = Math.min(Math.max(rounds, 1), 20);
+    let rowsHtml = '';
+    for (let i = 1; i <= rowsN; i++) {
+      const r = exchangeResidual(f, i);
+      rowsHtml += `<tr><td>${i}</td><td class="num">${fmt(r, 3)}</td><td class="num">${fmt(1 / r, 4)}×</td>
+        <td class="num">${fmt((1 - r) * 100, 5)} %</td>${ok(c0) ? `<td class="num">${showMolar(c0 * r)}</td>` : ''}</tr>`;
+    }
+
+    out.innerHTML = `
+      <div class="result">
+        <div class="result-main">${fmt(fold, 4)}× reduction</div>
+        <div class="result-sub">${fmt(removedPct, 5)} % of the old buffer removed after ${rounds} ${isDial ? 'change' + (rounds === 1 ? '' : 's') : 'round' + (rounds === 1 ? '' : 's')}${ok(c0) ? ` · residual ≈ ${showMolar(c0 * residual)}` : ''}.</div>
+      </div>
+      ${needMsg}
+      ${panel('Details', readout([
+        [isDial ? 'Per change' : 'Per round', `${fmt(perFold, 4)}× (leaves ${fmt(f, 3)})`],
+        ['Total reduction', `${fmt(fold, 4)}×`],
+        ['Residual fraction', fmt(residual, 3)],
+        ['Old buffer removed', `${fmt(removedPct, 5)} %`],
+        ...(ok(c0) ? [['Residual concentration', showMolar(c0 * residual)]] : []),
+      ]))}
+      ${panel('Round by round', `<div class="table-scroll"><table>
+        <thead><tr><th>${isDial ? 'Change' : 'Round'}</th><th>Residual</th><th>Reduction</th><th>Removed</th>${ok(c0) ? '<th>Residual conc.</th>' : ''}</tr></thead>
+        <tbody>${rowsHtml}</tbody></table></div>`)}
+      ${isDial ? `<div class="muted tiny">Assumes each change reaches equilibrium. If a change is stopped early, the real residual is higher than shown.</div>` : ''}
     `;
   },
 };
