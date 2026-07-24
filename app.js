@@ -637,7 +637,8 @@ TOOLS.molarity = {
            ['Glycine', 75.07], ['EDTA disodium·2H₂O', 372.24], ['Urea', 60.06],
            ['Guanidine·HCl', 95.53], ['SDS', 288.37], ['Imidazole', 68.08],
            ['DTT', 154.25], ['Sucrose', 342.30], ['Glucose', 180.16], ['MgCl₂', 95.21],
-           ['KCl', 74.55], ['CaCl₂', 110.98], ['Ammonium sulfate', 132.14], ['TCEP·HCl', 286.65]]
+           ['KCl', 74.55], ['CaCl₂', 110.98], ['Ammonium sulfate', 132.14], ['TCEP·HCl', 286.65],
+           ['Na₂HPO₄ (Na phosphate, dibasic)', 141.96], ['NaH₂PO₄ (Na phosphate, monobasic)', 119.98]]
           .map(([n, m]) => `<button class="chip" type="button" data-mw="${m}">${esc(n)} · ${m}</button>`).join('')}
       </div>`)}
     `;
