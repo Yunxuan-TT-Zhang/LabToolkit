@@ -38,10 +38,29 @@ eq('5M NaCl in 100mL', main(), /29\.22 g/);
 set('#f-vol',50);
 eq('re-solves after edit (50 mL)', main(), /14\.61 g/);
 
-// Switch to solving for volume instead: clear mass? user clears volume -> already solved vol.
-// Instead clear conc and provide mass:
+// Clearing an input must stick: the solved mass was derived from these inputs, so keeping
+// it would recompute the deleted value straight back.
 set('#f-conc','');
-eq('solves concentration when blanked', $('#f-conc').classList.contains('solved'), true);
+eq('clearing an input is not undone by the solver', $('#f-conc').value, '');
+eq('the derived mass is cleared with it', $('#f-mass').value, '');
+
+/* Regression for "it won't delete itself": with three inputs entered the fourth is derived,
+   and deleting any input used to bring the identical value straight back (because the
+   derived value was fed back in as an input). Start from a cleared tool so units and
+   solver state are deterministic. */
+nav('molarity');
+$('#toolClearBtn').click();
+set('#f-mw','58.44'); set('#f-conc','5'); set('#f-vol','100');   // defaults: mM, mL, mg
+eq('mass is solved from the three inputs', $('#f-mass').value, '29.22');
+set('#f-vol','');
+eq('deleting the volume sticks', $('#f-vol').value, '');
+eq('the derived mass is dropped too', $('#f-mass').value, '');
+set('#f-mw','');
+eq('deleting the MW sticks', $('#f-mw').value, '');
+eq('the untouched input is left alone', $('#f-conc').value, '5');
+// and it still solves normally once three values are present again
+set('#f-mw','58.44'); set('#f-vol','100');
+eq('still solves after re-entering values', $('#f-mass').value, '29.22');
 
 console.log('\n=== dilution ===');
 nav('dilution');

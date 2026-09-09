@@ -3033,10 +3033,17 @@ function releaseSolved(root, tool) {
   // The user typed into the field we had solved — they now own it.
   if (lastEdited === tool._solved) { tool._solved = null; return; }
 
-  // The user *cleared* some other field: that blank is the new target, so keep our
-  // previous answer as an input rather than blanking it too (which would leave two holes).
   const edited = lastEdited ? $(`#f-${lastEdited}`, root) : null;
-  if (edited && String(edited.value).trim() === '') { tool._solved = null; return; }
+  if (edited && String(edited.value).trim() === '') {
+    // The user emptied a *different* field. Our previous answer was derived from that very
+    // field, so treating it as an input would just recompute the identical value and the
+    // deletion would appear to be ignored (delete the volume, the same volume comes back).
+    // Drop the derived value too, so deleting genuinely removes information.
+    const derived = $(`#f-${tool._solved}`, root);
+    if (derived) { derived.value = ''; derived.classList.remove('solved'); }
+    tool._solved = null;
+    return;
+  }
 
   const el = $(`#f-${tool._solved}`, root);
   if (el) { el.value = ''; el.classList.remove('solved'); }
@@ -3207,6 +3214,18 @@ window.addEventListener('hashchange', () => go(location.hash.slice(1)));
 
 // A service worker needs a secure context; it can't run from a file:// double-click.
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  /* Assets are served cache-first, so without this a returning visitor stays on the old
+     build until they happen to reload twice. When a newer worker takes control, refresh
+     once so updates land on their own. `hadController` keeps the very first install (which
+     also fires controllerchange) from causing a pointless reload. */
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloadedForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloadedForUpdate) return;
+    reloadedForUpdate = true;
+    location.reload();
+  });
+
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 

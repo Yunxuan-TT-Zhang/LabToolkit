@@ -1,7 +1,7 @@
 /* TheLabToolkit service worker — precache the app shell so it works offline and installs
    as a standalone app. Bump CACHE whenever the shipped files change. */
 
-const CACHE = 'labtoolkit-v13';
+const CACHE = 'labtoolkit-v14';
 
 const ASSETS = [
   './',
