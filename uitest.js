@@ -236,6 +236,37 @@ eq('account tool renders', $('#topbarTitle').textContent, 'Account & sync');
 eq('shows not-enabled message without backend config', $('#acctBody').textContent, /aren.t enabled|Couldn.t reach/);
 eq('account tool did not throw', true, true);
 
+console.log('\n=== clear / undo ===');
+nav('molarity');
+set('#f-mw','58.44'); set('#f-conc','5'); set('#f-vol','100');
+eq('clear button visible on a calculator', $('#toolClearBtn').hidden, false);
+eq('values are entered', $('#f-mw').value, '58.44');
+$('#toolClearBtn').click();
+eq('fields are cleared', $('#f-mw').value, '');
+eq('concentration cleared too', $('#f-conc').value, '');
+eq('stored entry removed', JSON.parse(window.localStorage.getItem('labtoolkit.v1'))['molarity.mw'], undefined);
+eq('button now offers undo', $('#toolClearBtn').textContent, /Undo/);
+$('#toolClearBtn').click();
+eq('undo restores the values', $('#f-mw').value, '58.44');
+eq('undo restores every field', $('#f-vol').value, '100');
+eq('button returns to Clear', $('#toolClearBtn').textContent, 'Clear');
+// typing a new value dismisses a pending undo (the new run has begun)
+$('#toolClearBtn').click();
+eq('undo offered again', $('#toolClearBtn').textContent, /Undo/);
+set('#f-mw','100');
+eq('typing dismisses the undo', $('#toolClearBtn').textContent, 'Clear');
+eq('the typed value survives', $('#f-mw').value, '100');
+// a tool with its own defaults comes back to those defaults, not blank
+nav('a280');
+set('#f-path','0.1');
+$('#toolClearBtn').click();
+eq('defaults are restored, not blanked', $('#f-path').value, '1');
+// saved library data must never be clearable
+nav('library');
+eq('clear hidden on the library', $('#toolClearBtn').hidden, true);
+nav('about');
+eq('clear hidden on system pages', $('#toolClearBtn').hidden, true);
+
 console.log('\n=== dismissible footer ===');
 eq('footer shown by default', $('#foot').hidden, false);
 $('#footClose').click();

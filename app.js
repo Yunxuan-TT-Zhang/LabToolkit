@@ -3008,12 +3008,19 @@ function go(id) {
   if (location.hash.slice(1) !== id) history.replaceState(null, '', `#${id}`);
   store['labtoolkit.last'] = id;
   writeStore();
+  updateClearButton();
 }
 
 let lastEdited = null;
 
 function onChange(e) {
+  // A focused select can fire `change` as it is torn down during navigation. That event
+  // belongs to the tool being replaced, so ignore it rather than computing the new tool
+  // against a half-swapped DOM.
+  if (e.target.isConnected === false) return;
+
   if (e.target.matches('[data-k]')) { lastEdited = e.target.dataset.k; save(); }
+  dismissClearUndo();
   TOOLS[current].compute($('#content'));
 }
 
@@ -3060,6 +3067,74 @@ async function onAuthButtonClick() {
   }
 }
 
+/* ---------- top-bar clear button ---------- */
+
+/* Keys that must survive a "Clear" even though they share a tool's prefix — most
+   importantly library.items, which holds the user's saved recipes and protocols. */
+const PROTECTED_KEYS = new Set(['library.items', 'nav.hidden', 'nav.order', 'sync.lastAt']);
+
+// Saved work lives in the library and the account pages, so clearing is offered only on
+// the calculators themselves.
+const toolIsClearable = (id) => !!TOOLS[id] && !TOOLS[id].system && id !== 'library';
+
+let clearUndo = null;        // { id, snapshot } while an undo is still offered
+let clearUndoTimer = null;
+
+function updateClearButton() {
+  const b = $('#toolClearBtn');
+  if (!b) return;
+  if (clearUndo && clearUndo.id !== current) clearUndo = null;   // navigated away; drop it
+  const show = toolIsClearable(current);
+  b.hidden = !show;
+  b.textContent = 'Clear';
+  b.classList.remove('undo');
+  b.title = 'Clear this calculator and start a new run';
+}
+
+/* Wipes every stored entry for the current tool, then re-renders it — so fields come back
+   as the tool's own defaults (path length 1, 3 changes, …) rather than simply blank. */
+function clearCurrentTool() {
+  const id = current;
+  if (!toolIsClearable(id)) return;
+
+  const snapshot = {};
+  for (const k of Object.keys(store)) {
+    if (k.startsWith(id + '.') && !PROTECTED_KEYS.has(k)) snapshot[k] = store[k];
+  }
+  for (const k of Object.keys(snapshot)) delete store[k];
+  writeStore();
+
+  go(id);                                  // re-render from render() defaults
+  clearUndo = { id, snapshot };
+
+  const b = $('#toolClearBtn');
+  if (b) { b.textContent = 'Undo clear'; b.classList.add('undo'); b.title = 'Put back what was there'; }
+  // The undo stays available until they actually start a new run (see onChange), with a
+  // generous backstop so a forgotten "Undo clear" doesn't linger indefinitely.
+  clearTimeout(clearUndoTimer);
+  clearUndoTimer = setTimeout(() => { clearUndo = null; updateClearButton(); }, 120000);
+}
+
+/** Typing a new value means the new run has begun — drop the offer to undo. */
+function dismissClearUndo() {
+  if (!clearUndo) return;
+  clearUndo = null;
+  clearTimeout(clearUndoTimer);
+  updateClearButton();
+}
+
+function undoClear() {
+  if (!clearUndo) return;
+  const { id, snapshot } = clearUndo;
+  Object.assign(store, snapshot);
+  writeStore();
+  clearUndo = null;
+  clearTimeout(clearUndoTimer);
+  go(id);
+}
+
+const onClearButtonClick = () => (clearUndo ? undoClear() : clearCurrentTool());
+
 /* ---------- theme & mobile nav ---------- */
 
 function applyTheme(t) {
@@ -3086,6 +3161,26 @@ $('#themeToggle').addEventListener('click', () =>
 
 $('#authBtn').addEventListener('click', onAuthButtonClick);
 updateAuthButton();
+
+$('#toolClearBtn').addEventListener('click', onClearButtonClick);
+
+/* Focusing a number field selects what's in it, so a new value types straight over the old
+   one instead of having to be deleted first. A second click still places the caret, so
+   editing part of a number keeps working. */
+$('#content').addEventListener('focusin', (e) => {
+  const el = e.target;
+  if (el.matches && el.matches('input[type="number"]') && el.value !== '') {
+    el.dataset.selOnFocus = '1';
+    try { el.select(); } catch {}
+  }
+});
+$('#content').addEventListener('mouseup', (e) => {
+  const el = e.target;
+  if (el && el.dataset && el.dataset.selOnFocus) { e.preventDefault(); delete el.dataset.selOnFocus; }
+});
+$('#content').addEventListener('focusout', (e) => {
+  if (e.target && e.target.dataset) delete e.target.dataset.selOnFocus;
+});
 
 // One delegated listener for the whole content area, attached once.
 $('#content').addEventListener('input', onChange);

@@ -137,8 +137,26 @@ nav { padding: 4px 8px 8px; flex: 1; }
   padding: 0 18px;
 }
 
-.topbar-title { font-weight: 600; letter-spacing: -.01em; flex: 1; }
-.topbar-actions { display: flex; gap: 8px; }
+/* Truncate rather than push the action buttons off-screen on narrow phones. */
+.topbar-title {
+  font-weight: 600;
+  letter-spacing: -.01em;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.topbar-actions .ghost-btn { white-space: nowrap; }
+
+/* The undo state after clearing, so it reads as a way back rather than another action. */
+#toolClearBtn.undo {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  font-weight: 550;
+}
 
 .content {
   flex: 1;
