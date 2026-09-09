@@ -3226,7 +3226,14 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     location.reload();
   });
 
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  /* updateViaCache:'none' keeps sw.js itself out of the HTTP cache. Without it the worker
+     script is cached like any other file, so a stale worker gets reinstalled and keeps
+     serving stale code — the update never lands however many times you reload. */
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then((reg) => reg.update().catch(() => {}))
+      .catch(() => {});
+  });
 }
 
 // Chromium fires beforeinstallprompt, which lets the button trigger a native install.
